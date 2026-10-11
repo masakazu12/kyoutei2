@@ -4,28 +4,86 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Browser extension error shield (MetaMask, Web3 injected scripts, ad-blockers)
+      // Browser Extension Error Shield (MetaMask, Web3 injected scripts, inpage.js)
       (function() {
         function isExtensionError(source, message) {
-          var str = (source || '') + ' ' + (message || '');
-          return /chrome-extension:|moz-extension:|safari-extension:|metamask|inpage\.js/i.test(str);
+          try {
+            var str = '';
+            if (typeof source === 'string') str += source + ' ';
+            if (typeof message === 'string') str += message + ' ';
+            if (source && source.stack) str += source.stack + ' ';
+            if (message && message.stack) str += message.stack + ' ';
+            if (source && source.message) str += source.message + ' ';
+            if (message && message.message) str += message.message + ' ';
+            return /chrome-extension:|moz-extension:|safari-extension:|metamask|inpage\.js|Failed to connect to MetaMask/i.test(str);
+          } catch (e) {
+            return false;
+          }
         }
+
+        // 1. Classic window.onerror - Returning true stops reporting to browser/parent
+        var prevOnError = window.onerror;
+        window.onerror = function(msg, url, line, col, err) {
+          if (isExtensionError(url, msg) || isExtensionError('', err)) {
+            return true;
+          }
+          if (typeof prevOnError === 'function') {
+            return prevOnError.apply(this, arguments);
+          }
+          return false;
+        };
+
+        // 2. window.onunhandledrejection
+        var prevOnUnhandled = window.onunhandledrejection;
+        window.onunhandledrejection = function(e) {
+          if (e && isExtensionError('', e.reason)) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            return true;
+          }
+          if (typeof prevOnUnhandled === 'function') {
+            return prevOnUnhandled.apply(this, arguments);
+          }
+          return false;
+        };
+
+        // 3. Capture-phase error & unhandledrejection listeners
         window.addEventListener('error', function(e) {
-          if (isExtensionError(e.filename, e.message) || isExtensionError('', e.error && e.error.stack)) {
+          if (isExtensionError(e.filename, e.message) || isExtensionError('', e.error)) {
             e.stopImmediatePropagation();
             e.preventDefault();
             return true;
           }
         }, true);
+
         window.addEventListener('unhandledrejection', function(e) {
-          var reason = e.reason;
-          var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
-          if (isExtensionError('', msg)) {
+          if (e && isExtensionError('', e.reason)) {
             e.stopImmediatePropagation();
             e.preventDefault();
             return true;
           }
         }, true);
+
+        // 4. console.error & console.warn filter
+        var origConsoleError = console.error;
+        console.error = function() {
+          for (var i = 0; i < arguments.length; i++) {
+            if (isExtensionError('', arguments[i])) {
+              return;
+            }
+          }
+          return origConsoleError.apply(console, arguments);
+        };
+
+        var origConsoleWarn = console.warn;
+        console.warn = function() {
+          for (var i = 0; i < arguments.length; i++) {
+            if (isExtensionError('', arguments[i])) {
+              return;
+            }
+          }
+          return origConsoleWarn.apply(console, arguments);
+        };
       })();
     </script>
     <title>Kyotei Analyzer Pro 5</title>
