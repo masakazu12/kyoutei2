@@ -135,6 +135,38 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => {
               </div>
             </div>
           </div>
+
+          {/* 5. テレボート自動投票機能について */}
+          <div className="space-y-1.5">
+            <h4 className="font-bold text-emerald-400 border-b border-slate-800 pb-1 flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>5. テレボート自動投票マネージャー機能</span>
+            </h4>
+            <p className="text-slate-300">
+              算出された本命5点の買い目と推奨配分金額を、テレボート（TELEBOAT）公式規格に合わせて自動送信・投票シミュレーションする機能です。
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-slate-300 pl-1">
+              <li><strong className="text-white">テスト投票モード：</strong>初期状態では安全のためシミュレーションモードがONになっており、実資金を減らさずに投票フローと受付番号の検証を行えます。</li>
+              <li><strong className="text-white">締切前トリガー：</strong>レース締切の指定分数前（既定: 3分前）に最新オッズ・直前気配を加味して自動送信します。</li>
+              <li><strong className="text-white">セーフティリミット：</strong>1レース上限投票額や口座残高チェック、見送り(Skip)/停止(Stop)状態の自動除外ロックを常時作動しています。</li>
+            </ul>
+          </div>
+
+          {/* 6. Gemini AI予想・深層分析機能について */}
+          <div className="space-y-1.5">
+            <h4 className="font-bold text-purple-400 border-b border-slate-800 pb-1 flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>6. Gemini AI特選予想・水面展開深層分析</span>
+            </h4>
+            <p className="text-slate-300">
+              Google Gemini 3.8 Flash AI を活用し、全国24場の水面特性（淡水・海水・汽水）、風向・風速・波高、各艇の展示タイムおよび機力・勝率を深層推論します。
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-slate-300 pl-1">
+              <li><strong className="text-white">レース展開見解 & 注目艇：</strong>本命軸艇（◎）、対抗艇（○）、穴艇（▲）の選出根拠とスリット攻防キーをプロ視点で提示。</li>
+              <li><strong className="text-white">AI厳選5点買い目：</strong>オッズと資金配分アルゴリズムを連動させ、1クリックでメインテーブルに適用可能。</li>
+              <li><strong className="text-white">環境適応：</strong>追い風による差し展開、向かい風によるダッシュまくり展開など、気象変動に応じて即座に再分析します。</li>
+            </ul>
+          </div>
         </div>
 
         <div className="p-3 bg-slate-950 border-t border-slate-800 flex justify-end">

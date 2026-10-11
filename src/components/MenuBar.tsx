@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Download, RefreshCw, Trash2, Sliders, Info, BookOpen, AlertCircle, Play, DollarSign, Globe, Zap, Monitor } from 'lucide-react';
+import { Download, RefreshCw, Trash2, Sliders, Info, BookOpen, AlertCircle, Play, DollarSign, Globe, Zap, Monitor, Sparkles } from 'lucide-react';
 import { AllocationMode } from '../types/kyotei';
 
 interface MenuBarProps {
   onExportCsv: () => void;
   onClearHistory: () => void;
   onRunPrediction: () => void;
+  onRunAIPrediction?: () => void;
   onSimulateOdds: () => void;
   onChangeAllocationMode: (mode: AllocationMode) => void;
   onOpenSettings: () => void;
@@ -15,12 +16,14 @@ interface MenuBarProps {
   onOpenFetchRace: () => void;
   onAutoFetchResult?: () => void;
   onOpenExeModal?: () => void;
+  onOpenAutoVote?: () => void;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
   onExportCsv,
   onClearHistory,
   onRunPrediction,
+  onRunAIPrediction,
   onSimulateOdds,
   onChangeAllocationMode,
   onOpenSettings,
@@ -30,6 +33,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onOpenFetchRace,
   onAutoFetchResult,
   onOpenExeModal,
+  onOpenAutoVote,
 }) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
@@ -169,6 +173,18 @@ export const MenuBar: React.FC<MenuBarProps> = ({
               <Play className="w-3.5 h-3.5 text-emerald-400" />
               <span>本命5点予想エンジン実行</span>
             </button>
+            {onRunAIPrediction && (
+              <button
+                onClick={() => {
+                  onRunAIPrediction();
+                  close();
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-purple-950/60 flex items-center gap-2 text-purple-300 font-bold cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-400 fill-current" />
+                <span>AI予想・深層分析 (Gemini)</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 onSimulateOdds();
@@ -240,6 +256,38 @@ export const MenuBar: React.FC<MenuBarProps> = ({
               <DollarSign className="w-3.5 h-3.5 text-slate-400" />
               <span>固定額方式</span>
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* メニュー4.5: 投票(V) */}
+      <div className="relative">
+        <button
+          onClick={() => toggle('vote')}
+          className={`px-2 py-0.5 rounded hover:bg-slate-800 transition-colors ${
+            activeMenu === 'vote' ? 'bg-slate-800 text-white' : ''
+          }`}
+        >
+          投票(V)
+        </button>
+        {activeMenu === 'vote' && (
+          <div className="absolute left-0 top-full mt-0.5 w-60 bg-slate-900 border border-slate-700 shadow-xl rounded py-1 z-50 text-xs">
+            {onOpenAutoVote && (
+              <button
+                onClick={() => {
+                  onOpenAutoVote();
+                  close();
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center gap-2 text-emerald-300 font-bold cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span>テレボート自動投票マネージャー</span>
+              </button>
+            )}
+            <div className="border-t border-slate-800 my-1"></div>
+            <div className="px-3 py-1 text-[11px] text-slate-400">
+              テレボート公式API互換・3連単自動配分投票
+            </div>
           </div>
         )}
       </div>

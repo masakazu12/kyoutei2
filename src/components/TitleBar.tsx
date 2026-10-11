@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Globe,
   Monitor,
+  Sparkles,
 } from 'lucide-react';
 import { PRESET_RACES } from '../data/presetRaces';
 
@@ -23,6 +24,9 @@ interface TitleBarProps {
   onSelectPreset: (presetId: string) => void;
   onOpenFetchRace: () => void;
   onOpenExeModal?: () => void;
+  onOpenAutoVote?: () => void;
+  isAutoVoteEnabled?: boolean;
+  onOpenAIPrediction?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -36,6 +40,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onSelectPreset,
   onOpenFetchRace,
   onOpenExeModal,
+  onOpenAutoVote,
+  isAutoVoteEnabled = false,
+  onOpenAIPrediction,
 }) => {
   const [currentTime, setCurrentTime] = useState('');
 
@@ -91,6 +98,32 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             >
               <Monitor className="w-3.5 h-3.5 text-cyan-400" />
               <span>Windows版(EXE)</span>
+            </button>
+          )}
+
+          {onOpenAutoVote && (
+            <button
+              onClick={onOpenAutoVote}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded font-bold text-[11px] transition-colors shadow-xs cursor-pointer border ${
+                isAutoVoteEnabled
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 animate-pulse'
+                  : 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border-slate-700 hover:border-emerald-500'
+              }`}
+              title="テレボート自動投票マネージャー (3連単・資金配分連動)"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>{isAutoVoteEnabled ? '自動投票[ON]' : '自動投票'}</span>
+            </button>
+          )}
+
+          {onOpenAIPrediction && (
+            <button
+              onClick={onOpenAIPrediction}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-purple-950/80 hover:bg-purple-900 text-purple-200 hover:text-white border border-purple-500 font-bold text-[11px] transition-all shadow-xs cursor-pointer"
+              title="Gemini 3.8 Flash 搭載 競艇AI予想・水面展開深層分析"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-current" />
+              <span>AI予想</span>
             </button>
           )}
 

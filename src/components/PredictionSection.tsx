@@ -1,16 +1,20 @@
 import React from 'react';
 import { BetCandidate } from '../types/kyotei';
 import { BOAT_COLORS } from '../constants/venues';
-import { Play, Calculator, RefreshCw, CheckCircle, TrendingUp, AlertCircle, Zap } from 'lucide-react';
+import { Play, Calculator, RefreshCw, CheckCircle, TrendingUp, AlertCircle, Zap, Sparkles } from 'lucide-react';
 
 interface PredictionSectionProps {
   candidates: BetCandidate[];
   onUpdateOdds: (combination: string, odds: number) => void;
   onRunPrediction: () => void;
+  onRunAIPrediction?: () => void;
+  isAILoading?: boolean;
   onSimulateOdds: () => void;
   onCalculateAllocation: () => void;
   onOpenResultModal: () => void;
   onAutoFetchResult?: () => void;
+  onOpenAutoVote?: () => void;
+  isAutoVoteEnabled?: boolean;
   isSkipped: boolean;
   isStopped: boolean;
   minOdds: number;
@@ -21,10 +25,14 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
   candidates,
   onUpdateOdds,
   onRunPrediction,
+  onRunAIPrediction,
+  isAILoading = false,
   onSimulateOdds,
   onCalculateAllocation,
   onOpenResultModal,
   onAutoFetchResult,
+  onOpenAutoVote,
+  isAutoVoteEnabled = false,
   isSkipped,
   isStopped,
   minOdds,
@@ -67,6 +75,19 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
             <span>5点予想実行</span>
           </button>
 
+          {/* AI予想実行ボタン */}
+          {onRunAIPrediction && (
+            <button
+              onClick={onRunAIPrediction}
+              disabled={isAILoading}
+              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-black text-xs shadow-md transition-all cursor-pointer border border-purple-400/50 disabled:opacity-50"
+              title="Gemini 3.8 Flash AI による水面・機力・展開深層分析＆AI特選買い目導出"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-amber-300 fill-current ${isAILoading ? 'animate-spin' : ''}`} />
+              <span>{isAILoading ? 'AI分析中...' : 'AI予想実行'}</span>
+            </button>
+          )}
+
           <button
             onClick={onSimulateOdds}
             disabled={!hasBets}
@@ -86,6 +107,22 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
             <Calculator className="w-3.5 h-3.5" />
             <span>配分計算</span>
           </button>
+
+          {/* 自動投票ボタン */}
+          {onOpenAutoVote && (
+            <button
+              onClick={onOpenAutoVote}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded font-black text-xs shadow transition-colors cursor-pointer border ${
+                isAutoVoteEnabled
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 ring-1 ring-emerald-300 animate-pulse'
+                  : 'bg-emerald-950 hover:bg-emerald-900 text-emerald-200 border-emerald-600'
+              }`}
+              title="テレボート自動投票マネージャー (買い目・配分連動 / シミュレーション & 実投票)"
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-300 fill-current" />
+              <span>{isAutoVoteEnabled ? '自動投票[ON]' : '自動投票'}</span>
+            </button>
+          )}
 
           {/* 結果自動取得ボタン */}
           {onAutoFetchResult && (

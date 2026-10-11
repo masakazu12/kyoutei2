@@ -3,6 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Browser extension error shield (MetaMask, Web3 injected scripts, ad-blockers)
+      (function() {
+        function isExtensionError(source, message) {
+          var str = (source || '') + ' ' + (message || '');
+          return /chrome-extension:|moz-extension:|safari-extension:|metamask|inpage\.js/i.test(str);
+        }
+        window.addEventListener('error', function(e) {
+          if (isExtensionError(e.filename, e.message) || isExtensionError('', e.error && e.error.stack)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e.reason;
+          var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
+          if (isExtensionError('', msg)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+      })();
+    </script>
     <title>Kyotei Analyzer Pro 5</title>
     <meta name="description" content="Windows 10/11対応 競艇予想・資金配分・収支シミュレーション投票支援アプリケーション" />
     <meta property="og:title" content="Kyotei Analyzer Pro 5" />

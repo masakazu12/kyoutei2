@@ -19,6 +19,15 @@ import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
 import { FetchRaceModal } from './components/FetchRaceModal';
 import { ExeDistributionModal } from './components/ExeDistributionModal';
+import { AutoVoteModal } from './components/AutoVoteModal';
+import { AIPredictionModal } from './components/AIPredictionModal';
+import { generateAIPrediction, AIPredictionResult } from './services/aiPredictionService';
+import {
+  AutoVoteConfig,
+  VoteLogItem,
+  DEFAULT_AUTOVOTE_CONFIG,
+  executeAutoVote,
+} from './services/teleboatService';
 
 import {
   RaceInfo,
@@ -228,9 +237,50 @@ export default function App() {
     }, 3200);
   }, []);
 
-  // 8. モーダル表示管理
+  // 8. テレボート自動投票ステート
+  const [autoVoteConfig, setAutoVoteConfig] = useState<AutoVoteConfig>(() => {
+    try {
+      const saved = localStorage.getItem('kyotei_autovote_config_v1');
+      if (saved) {
+        return { ...DEFAULT_AUTOVOTE_CONFIG, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return DEFAULT_AUTOVOTE_CONFIG;
+  });
+  const [isVoting, setIsVoting] = useState<boolean>(false);
+  const [voteLogs, setVoteLogs] = useState<VoteLogItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('kyotei_autovote_logs_v1');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  // 自動投票設定の保存
+  useEffect(() => {
+    try {
+      localStorage.setItem('kyotei_autovote_config_v1', JSON.stringify(autoVoteConfig));
+    } catch (e) {}
+  }, [autoVoteConfig]);
+
+  // 投票ログの保存
+  useEffect(() => {
+    try {
+      localStorage.setItem('kyotei_autovote_logs_v1', JSON.stringify(voteLogs));
+    } catch (e) {}
+  }, [voteLogs]);
+
+  // 8.5 AI予想ステート (Gemini 3.8 Flash)
+  const [aiPredictionResult, setAiPredictionResult] = useState<AIPredictionResult | null>(null);
+  const [isAILoading, setIsAILoading] = useState<boolean>(false);
+
+  // 9. モーダル表示管理
   const [activeModal, setActiveModal] = useState<
-    'result' | 'history' | 'settings' | 'help' | 'fetchRace' | 'exe' | null
+    'result' | 'history' | 'settings' | 'help' | 'fetchRace' | 'exe' | 'autoVote' | 'aiPrediction' | null
   >(null);
 
   // 設定変更時の永続化
@@ -544,6 +594,120 @@ export default function App() {
     showToast('指定した履歴レコードを削除しました');
   };
 
+  // テレボート投票実行ハンドラ
+  const handleExecuteVote = async () => {
+    if (judgment.isStopped) {
+      showToast('STOP判定発令中のため投票できません (手動または日次限度)', 'error');
+      return;
+    }
+    if (judgment.isSkipped) {
+      showToast('見送り判定発令中のため投票できません (強風・高波・低オッズ)', 'error');
+      return;
+    }
+
+    setIsVoting(true);
+    try {
+      // 買い目・配分が未設定の場合は自動配分
+      let currentCandidates = candidates;
+      if (currentCandidates.length === 0 || currentCandidates.every((c) => c.stake === 0)) {
+        const scored = calculateBoatScores(race.boats, settings);
+        const generated = generateFivePointBets(scored);
+        const oddsMap = simulateRealisticOdds(generated);
+        generated.forEach((c) => {
+          c.odds = oddsMap[c.combination] || 5.0;
+        });
+        const alloc = allocateMoney(generated, settings);
+        currentCandidates = alloc.updatedCandidates;
+        setCandidates(alloc.updatedCandidates);
+        setAllocationInfo(alloc);
+      }
+
+      const result = await executeAutoVote({
+        race,
+        candidates: currentCandidates,
+        config: autoVoteConfig,
+      });
+
+      if (!result.success) {
+        showToast(result.error || '投票処理に失敗しました', 'error');
+        return;
+      }
+
+      // ログ追加
+      setVoteLogs((prev) => [...result.logs, ...prev]);
+
+      // 残高更新 (実投票時またはシミュレーション時)
+      setAutoVoteConfig((prev) => ({
+        ...prev,
+        accountBalance: Math.max(0, prev.accountBalance - result.totalVoted),
+      }));
+
+      // サウンド再生 (Web Audio API)
+      if (autoVoteConfig.soundAlert && typeof window !== 'undefined') {
+        try {
+          const AudioContext = window.AudioContext || (window as unknown as { webkitAudioContext: typeof window.AudioContext }).webkitAudioContext;
+          if (AudioContext) {
+            const ctx = new AudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.3);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      const modeText = autoVoteConfig.testMode ? '[テスト投票完了]' : '[実投票完了]';
+      showToast(
+        `${modeText} ${race.venue}${race.raceNo}R 3連単${result.logs.length}点 (計¥${result.totalVoted.toLocaleString()}) の投票を受付しました`
+      );
+    } catch (err) {
+      console.error('Vote execute error:', err);
+      showToast('投票処理中にエラーが発生しました', 'error');
+    } finally {
+      setIsVoting(false);
+    }
+  };
+
+  // AI予想実行ハンドラ (Gemini 3.8 Flash)
+  const handleRunAIPrediction = async () => {
+    setIsAILoading(true);
+    setActiveModal('aiPrediction');
+    try {
+      const res = await generateAIPrediction({
+        race,
+        scoredBoats,
+        settings,
+      });
+      setAiPredictionResult(res);
+      showToast(`【${race.venue} ${race.raceNo}R】Gemini AI予想・水面展開分析が完了しました`, 'success');
+    } catch (err) {
+      console.error('AI prediction error:', err);
+      showToast('AI予想の生成に失敗しました', 'error');
+    } finally {
+      setIsAILoading(false);
+    }
+  };
+
+  // AI予想買い目をメイン買い目テーブルに反映
+  const handleApplyAICandidates = () => {
+    if (!aiPredictionResult || aiPredictionResult.aiCandidates.length === 0) return;
+    setCandidates(aiPredictionResult.aiCandidates);
+    const alloc = allocateMoney(aiPredictionResult.aiCandidates, settings);
+    setCandidates(alloc.updatedCandidates);
+    setAllocationInfo(alloc);
+    setActiveModal(null);
+    showToast(`AI特選買い目（5点）をメイン画面に適用しました`, 'success');
+  };
+
   // レース確定結果の自動取得 (F08 + 自動データ取得)
   const handleAutoFetchResult = async () => {
     setIsFetchingResult(true);
@@ -722,6 +886,9 @@ export default function App() {
         onSelectPreset={handleSelectPreset}
         onOpenFetchRace={() => setActiveModal('fetchRace')}
         onOpenExeModal={() => setActiveModal('exe')}
+        onOpenAutoVote={() => setActiveModal('autoVote')}
+        isAutoVoteEnabled={autoVoteConfig.enabled}
+        onOpenAIPrediction={handleRunAIPrediction}
       />
 
       {/* 2. メニューバー */}
@@ -729,6 +896,7 @@ export default function App() {
         onExportCsv={handleExportCsv}
         onClearHistory={() => setShowClearHistoryConfirm(true)}
         onRunPrediction={handleRunPrediction}
+        onRunAIPrediction={handleRunAIPrediction}
         onSimulateOdds={handleSimulateOdds}
         onChangeAllocationMode={(mode: AllocationMode) => {
           setSettings((prev) => ({ ...prev, allocationMode: mode }));
@@ -743,6 +911,7 @@ export default function App() {
         onOpenFetchRace={() => setActiveModal('fetchRace')}
         onAutoFetchResult={handleAutoFetchResult}
         onOpenExeModal={() => setActiveModal('exe')}
+        onOpenAutoVote={() => setActiveModal('autoVote')}
       />
 
       {/* 3. 状態アラートバナー (見送り / STOP / NG 時のトップ案内) */}
@@ -934,10 +1103,14 @@ export default function App() {
           candidates={candidates}
           onUpdateOdds={handleUpdateOdds}
           onRunPrediction={handleRunPrediction}
+          onRunAIPrediction={handleRunAIPrediction}
+          isAILoading={isAILoading}
           onSimulateOdds={handleSimulateOdds}
           onCalculateAllocation={handleCalculateAllocation}
           onOpenResultModal={() => setActiveModal('result')}
           onAutoFetchResult={handleAutoFetchResult}
+          onOpenAutoVote={() => setActiveModal('autoVote')}
+          isAutoVoteEnabled={autoVoteConfig.enabled}
           isSkipped={judgment.isSkipped}
           isStopped={judgment.isStopped}
           minOdds={settings.minOdds}
@@ -1006,6 +1179,30 @@ export default function App() {
 
       {activeModal === 'exe' && (
         <ExeDistributionModal onClose={() => setActiveModal(null)} />
+      )}
+
+      {activeModal === 'autoVote' && (
+        <AutoVoteModal
+          race={race}
+          candidates={candidates}
+          config={autoVoteConfig}
+          onUpdateConfig={setAutoVoteConfig}
+          onExecuteVote={handleExecuteVote}
+          isVoting={isVoting}
+          voteLogs={voteLogs}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+
+      {activeModal === 'aiPrediction' && (
+        <AIPredictionModal
+          race={race}
+          aiResult={aiPredictionResult}
+          isLoading={isAILoading}
+          onApplyAICandidates={handleApplyAICandidates}
+          onReGenerate={handleRunAIPrediction}
+          onClose={() => setActiveModal(null)}
+        />
       )}
     </div>
   );
