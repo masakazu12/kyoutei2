@@ -1,9 +1,15 @@
 import { RaceInfo } from '../types/kyotei';
 
+const getTodayDateString = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const defaultDate = getTodayDateString();
+
 export const PRESET_RACES: RaceInfo[] = [
   {
     id: 'suminoe-12r-final',
-    date: '2026-10-06',
+    date: defaultDate,
     venue: '住之江',
     raceNo: 12,
     raceTitle: '第12R SG グランプリ優勝戦',
@@ -111,7 +117,7 @@ export const PRESET_RACES: RaceInfo[] = [
   },
   {
     id: 'edogawa-07r-rough',
-    date: '2026-10-06',
+    date: defaultDate,
     venue: '江戸川',
     raceNo: 7,
     raceTitle: '第7R 荒天水面・予選特賞（見送り検証用）',
@@ -213,7 +219,7 @@ export const PRESET_RACES: RaceInfo[] = [
   },
   {
     id: 'omura-12r-tokusen',
-    date: '2026-10-06',
+    date: defaultDate,
     venue: '大村',
     raceNo: 12,
     raceTitle: '第12R 発祥地特選（イン信頼水面）',
@@ -315,7 +321,7 @@ export const PRESET_RACES: RaceInfo[] = [
   },
   {
     id: 'kiryu-11r-semi',
-    date: '2026-10-06',
+    date: defaultDate,
     venue: '桐生',
     raceNo: 11,
     raceTitle: '第11R ドラキリュウ準優勝戦',

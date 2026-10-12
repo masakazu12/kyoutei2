@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { BetCandidate, RaceInfo } from '../types/kyotei';
 import { BOAT_COLORS } from '../constants/venues';
-import { Award, CheckCircle, XCircle, ArrowRight, Zap, RefreshCw } from 'lucide-react';
+import { Award, CheckCircle, XCircle, ArrowRight, Zap, RefreshCw, AlertCircle, Clock } from 'lucide-react';
 import { fetchRaceResult } from '../services/raceDataProvider';
-
+import { checkRaceConfirmation } from '../services/deadlineService';
 import { isBetHit } from '../services/betEvaluationHelper';
 
 interface ResultModalProps {
@@ -34,6 +34,15 @@ export const ResultModal: React.FC<ResultModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAutoFetching, setIsAutoFetching] = useState<boolean>(false);
 
+  // レースの公式確定チェック
+  const confirmation = checkRaceConfirmation({
+    date: race.date,
+    deadlineTime: race.deadlineTime,
+    venueName: race.venue,
+    raceNo: race.raceNo,
+  });
+  const isRaceConfirmed = confirmation.isConfirmed;
+
   const finishOrder = `${first}-${second}-${third}`;
   const totalStake = candidates.reduce((sum, c) => sum + (c.stake || 0), 0);
 
@@ -61,13 +70,14 @@ export const ResultModal: React.FC<ResultModalProps> = ({
         venueName: race.venue,
         raceNo: race.raceNo,
         boats: race.boats,
+        deadlineTime: race.deadlineTime,
       });
       setFirst(res.first);
       setSecond(res.second);
       setThird(res.third);
       setPayoutInput(String(res.officialPayout));
-    } catch (e) {
-      setErrorMessage('結果の自動取得に失敗しました。');
+    } catch (e: any) {
+      setErrorMessage(e?.message || '結果の自動取得に失敗しました。');
     } finally {
       setIsAutoFetching(false);
     }
@@ -152,6 +162,21 @@ export const ResultModal: React.FC<ResultModalProps> = ({
           <span className="font-mono text-slate-400">{race.date}</span>
         </div>
 
+        {/* レース未確定警告バナー */}
+        {!isRaceConfirmed && (
+          <div className="mt-2.5 p-2.5 bg-amber-950/70 border border-amber-600/70 rounded text-amber-200 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-bold flex items-center gap-1.5">
+                <span>【公式結果 未確定】現在「{confirmation.statusText}」です</span>
+              </div>
+              <div className="text-[11px] text-amber-300/80">
+                {confirmation.detail} 公式確定前のため、自動取得および的中判定は保留されます。
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 公式結果ワンクリック自動取得ボタン */}
         <div className="mt-2.5 p-2 bg-blue-950/40 border border-blue-700/60 rounded flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-blue-200 text-xs">
@@ -209,7 +234,12 @@ export const ResultModal: React.FC<ResultModalProps> = ({
         {/* リアルタイム結果プレビュー */}
         <div className="mt-4 p-3 rounded border text-xs flex items-center justify-between bg-slate-950/70 border-slate-800">
           <div className="flex items-center gap-2">
-            {isHit ? (
+            {!isRaceConfirmed ? (
+              <div className="flex items-center gap-1.5 text-amber-400 font-bold text-sm">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span>【未確定プレビュー】</span>
+              </div>
+            ) : isHit ? (
               <div className="flex items-center gap-1.5 text-yellow-300 font-black text-sm">
                 <CheckCircle className="w-5 h-5 text-yellow-400" />
                 <span>【的中！】</span>
@@ -221,21 +251,29 @@ export const ResultModal: React.FC<ResultModalProps> = ({
               </div>
             )}
             <span className="font-mono font-bold text-slate-200 text-sm">
-              確定着順: {finishOrder}
+              選択着順: {finishOrder}
             </span>
           </div>
 
           <div className="text-right font-mono">
-            <div className="text-[11px] text-slate-400">
-              投資: {totalStake.toLocaleString()}円 → 払戻: {totalReturn.toLocaleString()}円
-            </div>
-            <div
-              className={`font-black text-sm tabular-nums ${
-                profit > 0 ? 'text-emerald-400' : profit < 0 ? 'text-rose-400' : 'text-slate-300'
-              }`}
-            >
-              損益: {profit > 0 ? `+${profit.toLocaleString()}` : profit.toLocaleString()} 円
-            </div>
+            {isRaceConfirmed ? (
+              <>
+                <div className="text-[11px] text-slate-400">
+                  投資: {totalStake.toLocaleString()}円 → 払戻: {totalReturn.toLocaleString()}円
+                </div>
+                <div
+                  className={`font-black text-sm tabular-nums ${
+                    profit > 0 ? 'text-emerald-400' : profit < 0 ? 'text-rose-400' : 'text-slate-300'
+                  }`}
+                >
+                  損益: {profit > 0 ? `+${profit.toLocaleString()}` : profit.toLocaleString()} 円
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] text-amber-300/80">
+                公式レース確定後に的中・収支が確定します
+              </div>
+            )}
           </div>
         </div>
 

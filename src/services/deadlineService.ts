@@ -132,3 +132,93 @@ export function calculateDeadlineStatus(
     isPast: false,
   };
 }
+
+export interface RaceConfirmationCheck {
+  isConfirmed: boolean;
+  statusText: '公式確定済' | '発売中 (未確定)' | 'まもなく締切 (未確定)' | '発走・審判確認中 (確定前)' | '開催前 (未確定)';
+  detail: string;
+  remainingMinutes: number;
+}
+
+/**
+ * レースが公式に終了・確定しているか（的中判定を行ってよいか）を厳格に判定
+ * 確定していないレース（発売中・締切前・発走待機中）での的中判定を防止
+ */
+export function checkRaceConfirmation(params: {
+  date: string;
+  deadlineTime?: string;
+  venueName?: string;
+  raceNo?: number;
+  referenceNow?: Date;
+}): RaceConfirmationCheck {
+  const { date, deadlineTime, venueName, raceNo, referenceNow } = params;
+  const now = referenceNow || new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  // 1. 過去日付のレースはすべて公式確定済み
+  if (date && date < todayStr) {
+    return {
+      isConfirmed: true,
+      statusText: '公式確定済',
+      detail: '過去日付のレース（公式確定実績）です',
+      remainingMinutes: -999,
+    };
+  }
+
+  // 2. 未来日付のレースは未確定
+  if (date && date > todayStr) {
+    return {
+      isConfirmed: false,
+      statusText: '開催前 (未確定)',
+      detail: `${date} 開催予定のレースです。着順はまだ確定していません。`,
+      remainingMinutes: 999,
+    };
+  }
+
+  // 3. 本日のレース：締切時刻および進行状況を判定
+  const effectiveDeadline =
+    deadlineTime && deadlineTime.includes(':')
+      ? deadlineTime
+      : venueName && raceNo
+      ? getStandardDeadlineTime(venueName, raceNo)
+      : '20:45';
+
+  const [hoursStr, minutesStr] = effectiveDeadline.split(':');
+  const dHour = parseInt(hoursStr, 10) || 0;
+  const dMin = parseInt(minutesStr, 10) || 0;
+  const deadlineDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), dHour, dMin, 0);
+
+  // 競艇公式ルール：締切後、スタート展示〜ピット離れ〜周回(約1分45秒)〜着順審判・確定まで約5分を要する
+  const confirmationDate = new Date(deadlineDate.getTime() + 5 * 60 * 1000);
+  const diffMs = deadlineDate.getTime() - now.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+
+  // 締切前（発売中）
+  if (now.getTime() < deadlineDate.getTime()) {
+    const isSoon = diffMinutes <= 10;
+    return {
+      isConfirmed: false,
+      statusText: isSoon ? 'まもなく締切 (未確定)' : '発売中 (未確定)',
+      detail: `締切時刻 ${effectiveDeadline} 前です（あと ${Math.max(0, diffMinutes)}分）。レースはまだ開催されていません。`,
+      remainingMinutes: diffMinutes,
+    };
+  }
+
+  // 締切直後〜着順審判中（締切から5分以内）
+  if (now.getTime() < confirmationDate.getTime()) {
+    return {
+      isConfirmed: false,
+      statusText: '発走・審判確認中 (確定前)',
+      detail: `締切済み・現在レース発走中です。公式着順発表・確定まで約${Math.max(1, Math.ceil((confirmationDate.getTime() - now.getTime()) / 60000))}分お待ちください。`,
+      remainingMinutes: diffMinutes,
+    };
+  }
+
+  // 締切＋5分以上経過：公式結果確定
+  return {
+    isConfirmed: true,
+    statusText: '公式確定済',
+    detail: 'レース終了・公式着順が確定しています',
+    remainingMinutes: diffMinutes,
+  };
+}

@@ -171,6 +171,7 @@ export interface VenueStatistics {
  */
 export type AutoPilotStage =
   | 'STOPPED'        // 停止中
+  | 'FETCHING_CARD'  // 番組・出走表データ同期中
   | 'ANALYZING'      // 出走表・気象条件解析中
   | 'PREDICTING'     // 予想・オッズ配分計算中
   | 'VOTING'         // テレボート自動投票中
@@ -208,7 +209,7 @@ export interface AutoPilotConfig {
 
 export const DEFAULT_AUTOPILOT_CONFIG: AutoPilotConfig = {
   enabled: false,
-  targetMode: 'single_venue',
+  targetMode: 'all_venues',
   targetVenues: [],
   startRaceNo: 1,
   endRaceNo: 12,

@@ -4,7 +4,7 @@
  * Ver. 1.0 (Clean-room implementation based on official specification)
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { MenuBar } from './components/MenuBar';
 import { RaceHeaderSection } from './components/RaceHeaderSection';
@@ -34,6 +34,7 @@ import {
   playAutoPilotSound,
   evaluateAutoPilotSafety,
   AUTOPILOT_STAGE_META,
+  getNextPatrolTarget,
 } from './services/autopilotService';
 
 import {
@@ -68,6 +69,7 @@ import { calculateStatistics, calculateVenueStatistics } from './services/statis
 import { isBetHit, getEstimatedOfficialPayout } from './services/betEvaluationHelper';
 import { exportHistoryToCsv } from './services/csvExportService';
 import { fetchRaceCard, fetchRaceResult } from './services/raceDataProvider';
+import { checkRaceConfirmation } from './services/deadlineService';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -78,6 +80,7 @@ import {
   Zap,
   RefreshCw,
   X,
+  Clock,
 } from 'lucide-react';
 
 export interface LatestResultNotice {
@@ -92,6 +95,8 @@ export interface LatestResultNotice {
   officialPayout: number;
   popularityRank: number;
   isHit: boolean;
+  isConfirmed: boolean;
+  statusMessage?: string;
   totalStake: number;
   totalReturn: number;
   profit: number;
@@ -142,8 +147,15 @@ export default function App() {
     }
   }, [history]);
 
-  // 3. 現在のレースデータ
-  const [race, setRace] = useState<RaceInfo>(() => PRESET_RACES[0]);
+  // 3. 現在のレースデータ (当日の公式日付で初期化)
+  const [race, setRace] = useState<RaceInfo>(() => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return {
+      ...PRESET_RACES[0],
+      date: todayStr,
+    };
+  });
 
   // 4. 手動STOPフラグ
   const [manualStop, setManualStop] = useState<boolean>(false);
@@ -249,6 +261,8 @@ export default function App() {
   const [autoSessionHits, setAutoSessionHits] = useState<number>(0);
   const [autoSessionProfit, setAutoSessionProfit] = useState<number>(0);
   const [consecutiveLosses, setConsecutiveLosses] = useState<number>(0);
+  // 同一セッションにおける投票済みレース追跡（多重投票防止・巡回スキップ判定）
+  const votedRacesRef = useRef<Set<string>>(new Set());
 
   // 自動運転設定の保存
   useEffect(() => {
@@ -463,7 +477,10 @@ export default function App() {
     setLastFinishedStatus(null);
     const target = PRESET_RACES.find((p) => p.id === presetId);
     if (target) {
-      setRace(JSON.parse(JSON.stringify(target)));
+      const cloned = JSON.parse(JSON.stringify(target));
+      const d = new Date();
+      cloned.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      setRace(cloned);
       // 新規番組読み込み後に自動予想を再計算
       setTimeout(() => {
         const newScored = calculateBoatScores(target.boats, settings);
@@ -594,6 +611,11 @@ export default function App() {
     setLastFinishedStatus(null);
     setLatestResultNotice(null);
     setShowClearHistoryConfirm(false);
+    votedRacesRef.current.clear();
+    setAutoSessionRaces(0);
+    setAutoSessionHits(0);
+    setAutoSessionProfit(0);
+    setConsecutiveLosses(0);
     try {
       localStorage.setItem('kyotei_analyzer_history_v2', JSON.stringify([]));
     } catch (e) {
@@ -751,11 +773,47 @@ export default function App() {
         totalStake = alloc.totalStake;
       }
 
+      // 公式レース確定状態チェック（未確定・発売中レースでの誤った的中判定を完全防止）
+      const confirmation = checkRaceConfirmation({
+        date: race.date,
+        deadlineTime: race.deadlineTime,
+        venueName: race.venue,
+        raceNo: race.raceNo,
+      });
+
+      if (!confirmation.isConfirmed) {
+        showToast(
+          `【未確定】第${race.raceNo}Rはまだ確定していません（${confirmation.statusText} / 締切: ${race.deadlineTime}）。公式レース確定前のため的中判定は行いません`,
+          'info'
+        );
+        setLatestResultNotice({
+          venue: race.venue,
+          raceNo: race.raceNo,
+          raceTitle: race.raceTitle,
+          finishOrder: '未確定（着順待機中）',
+          first: 0,
+          second: 0,
+          third: 0,
+          winningTechnique: confirmation.statusText,
+          officialPayout: 0,
+          popularityRank: 0,
+          isHit: false,
+          isConfirmed: false,
+          statusMessage: `【${confirmation.statusText}】締切時刻（${race.deadlineTime}）前、または着順審判中のため公式確定着順は発表されていません。レース終了・着順確定後に的中判定が行われます。`,
+          totalStake,
+          totalReturn: 0,
+          profit: 0,
+        });
+        setIsFetchingResult(false);
+        return;
+      }
+
       const res = await fetchRaceResult({
         date: race.date,
         venueName: race.venue,
         raceNo: race.raceNo,
         boats: race.boats,
+        deadlineTime: race.deadlineTime,
       });
 
       const matchedCandidate = currentCandidates.find(
@@ -814,6 +872,7 @@ export default function App() {
         officialPayout: res.officialPayout,
         popularityRank: res.popularityRank,
         isHit,
+        isConfirmed: true,
         totalStake,
         totalReturn,
         profit,
@@ -826,9 +885,9 @@ export default function App() {
           : `確定着順 ${res.finishOrder} (${res.officialPayout}円) - 不的中`,
         isHit ? 'success' : 'info'
       );
-    } catch (e) {
-      console.error('Auto fetch result error:', e);
-      showToast('公式確定結果の取得に失敗しました', 'error');
+    } catch (e: any) {
+      console.warn('Auto fetch result notice:', e);
+      showToast(e?.message || '公式確定結果の取得に失敗しました', 'error');
     } finally {
       setIsFetchingResult(false);
     }
@@ -851,8 +910,75 @@ export default function App() {
     [race.venue, race.raceNo]
   );
 
+  // 8.9 全自動運転 (Autopilot) 実行ガード用Ref
+  const stageExecutionKeyRef = useRef<string>('');
+  const isProcessingStageRef = useRef<boolean>(false);
+
+  // 巡回先レースの確実な番組同期 & ステージ遷移
+  const transitionToPatrolRace = useCallback(
+    async (targetVenue: string, targetRaceNo: number) => {
+      stageExecutionKeyRef.current = '';
+      isProcessingStageRef.current = false;
+      setAutoPilotCountdown(0);
+      setAutoPilotStage('FETCHING_CARD');
+      setAutoPilotMessage(`【${targetVenue} 第${targetRaceNo}R】番組・出走表データを取得中...`);
+      addAutoPilotLog(
+        'INFO',
+        `次レース巡回: 【${race.venue} 第${race.raceNo}R】➔【${targetVenue} 第${targetRaceNo}R】へ移行`
+      );
+
+      try {
+        const newRace = await fetchRaceCard({
+          date: race.date,
+          venueName: targetVenue,
+          raceNo: targetRaceNo,
+        });
+
+        setLastFinishedStatus(null);
+        setLatestResultNotice(null);
+        setRace(newRace);
+
+        const newScored = calculateBoatScores(newRace.boats, settings);
+        const generated = generateBetsByType(newScored, selectedBetType, selectedPointCount);
+        const oddsMap = simulateRealisticOdds(generated, selectedBetType);
+        generated.forEach((c) => {
+          c.odds = oddsMap[c.combination] || 5.0;
+        });
+        const alloc = allocateMoney(generated, settings);
+        setCandidates(alloc.updatedCandidates);
+        setAllocationInfo(alloc);
+
+        stageExecutionKeyRef.current = '';
+        isProcessingStageRef.current = false;
+        setAutoPilotCountdown(0);
+        setAutoPilotStage('ANALYZING');
+        setAutoPilotMessage(`【${targetVenue} 第${targetRaceNo}R】出走表同期完了。条件判定中...`);
+        showToast(`【${targetVenue} 第${targetRaceNo}R】へ巡回移行しました`);
+      } catch (err) {
+        console.error('Patrol transition error:', err);
+        setAutoPilotStage('SAFETY_STOP');
+        setAutoPilotConfig((prev) => ({ ...prev, enabled: false }));
+        setAutoPilotMessage(`巡回同期失敗: 【${targetVenue} 第${targetRaceNo}R】取得エラー`);
+        addAutoPilotLog('STOP', `【${targetVenue} 第${targetRaceNo}R】データ取得失敗により安全停止`);
+        showToast('番組データの同期に失敗したため自動運転を停止しました', 'error');
+      }
+    },
+    [
+      race.venue,
+      race.raceNo,
+      race.date,
+      settings,
+      selectedBetType,
+      selectedPointCount,
+      addAutoPilotLog,
+      showToast,
+    ]
+  );
+
   // 全自動運転 START / STOP 切替
   const handleToggleAutoPilot = useCallback(() => {
+    stageExecutionKeyRef.current = '';
+    isProcessingStageRef.current = false;
     if (autoPilotConfig.enabled) {
       setAutoPilotConfig((prev) => ({ ...prev, enabled: false }));
       setAutoPilotStage('STOPPED');
@@ -863,38 +989,95 @@ export default function App() {
       showToast('全自動運転を停止しました', 'info');
     } else {
       setAutoPilotConfig((prev) => ({ ...prev, enabled: true }));
-      setAutoPilotStage('ANALYZING');
-      setAutoPilotCountdown(0);
-      setAutoPilotMessage(`【${race.venue} ${race.raceNo}R】条件判定・番組解析中...`);
+      const currentVoteKey = `${race.venue}-${race.raceNo}`;
+      if (votedRacesRef.current.has(currentVoteKey)) {
+        // 現在のレースが既に投票済みの場合は、次の未投票レースへ即座に巡回
+        const next = getNextPatrolTarget({
+          currentVenue: race.venue,
+          currentRaceNo: race.raceNo,
+          config: autoPilotConfig,
+          alreadyVotedKeys: votedRacesRef.current,
+        });
+        transitionToPatrolRace(next.nextVenue, next.nextRaceNo);
+      } else {
+        setAutoPilotStage('ANALYZING');
+        setAutoPilotCountdown(0);
+        setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】条件判定・番組解析中...`);
+      }
       setConsecutiveLosses(0);
       if (autoPilotConfig.soundAlert) playAutoPilotSound('start');
       addAutoPilotLog(
         'INFO',
-        `全自動運転を開始しました (${autoPilotConfig.targetMode === 'single_venue' ? '会場連続巡回' : '全国横断巡回'})`
+        `全自動運転を開始しました (${autoPilotConfig.targetMode === 'single_venue' ? `単一会場連続 (${race.venue})` : '全国24場横断巡回'})`
       );
-      showToast('全自動運転を開始しました！自動サイクルが稼働します', 'success');
+      showToast(
+        `全自動運転を開始しました！(${autoPilotConfig.targetMode === 'single_venue' ? `${race.venue}連続` : '全国24場巡回'})`,
+        'success'
+      );
     }
   }, [
-    autoPilotConfig.enabled,
-    autoPilotConfig.soundAlert,
-    autoPilotConfig.targetMode,
+    autoPilotConfig,
     race.venue,
     race.raceNo,
+    transitionToPatrolRace,
     addAutoPilotLog,
     showToast,
   ]);
 
+  // 巡回モード（全国24場巡回 ⇄ 単一会場連続）ワンクリック切替
+  const handleToggleAutoPilotTargetMode = useCallback(() => {
+    setAutoPilotConfig((prev) => {
+      const nextMode = prev.targetMode === 'all_venues' ? 'single_venue' : 'all_venues';
+      showToast(
+        nextMode === 'all_venues'
+          ? '全国24場 横断巡回モードに切り替えました'
+          : `単一会場連続モード (${race.venue}) に切り替えました`,
+        'info'
+      );
+      addAutoPilotLog(
+        'INFO',
+        `巡回モード切替: ${nextMode === 'all_venues' ? '全国24場 横断巡回' : `単一会場連続 (${race.venue})`}`
+      );
+      return { ...prev, targetMode: nextMode };
+    });
+  }, [race.venue, showToast, addAutoPilotLog]);
+
+  // 次回巡回予定のプレビュー
+  const nextPatrolPreview = useMemo(() => {
+    return getNextPatrolTarget({
+      currentVenue: race.venue,
+      currentRaceNo: race.raceNo,
+      config: autoPilotConfig,
+      alreadyVotedKeys: votedRacesRef.current,
+    });
+  }, [race.venue, race.raceNo, autoPilotConfig]);
+
   // 次レース・待機の強制スキップ
   const handleForceNextRace = useCallback(() => {
+    stageExecutionKeyRef.current = '';
+    isProcessingStageRef.current = false;
     if (autoPilotStage === 'WAITING_RESULT') {
       setAutoPilotCountdown(0);
       setAutoPilotStage('FETCHING_RESULT');
     } else if (autoPilotStage === 'NEXT_RACE_WAIT') {
       setAutoPilotCountdown(0);
+      const next = getNextPatrolTarget({
+        currentVenue: race.venue,
+        currentRaceNo: race.raceNo,
+        config: autoPilotConfig,
+        alreadyVotedKeys: votedRacesRef.current,
+      });
+      transitionToPatrolRace(next.nextVenue, next.nextRaceNo);
     } else {
-      handleNextRace();
+      const next = getNextPatrolTarget({
+        currentVenue: race.venue,
+        currentRaceNo: race.raceNo,
+        config: autoPilotConfig,
+        alreadyVotedKeys: votedRacesRef.current,
+      });
+      transitionToPatrolRace(next.nextVenue, next.nextRaceNo);
     }
-  }, [autoPilotStage, handleNextRace]);
+  }, [autoPilotStage, race.venue, race.raceNo, autoPilotConfig, transitionToPatrolRace]);
 
   // グローバルショートカットキー (F9: 自動運転, F12: 設定, Escape: モーダル閉じる)
   useEffect(() => {
@@ -914,15 +1097,76 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleToggleAutoPilot]);
 
-  // 全自動運転 (Autopilot) サイクル制御エンジン
+  // 全自動運転: タイマー制御 & ステージ移行（WAITING_RESULT および NEXT_RACE_WAIT）
   useEffect(() => {
     if (!autoPilotConfig.enabled || autoPilotStage === 'STOPPED' || autoPilotStage === 'SAFETY_STOP') {
       return;
     }
 
+    if (autoPilotStage !== 'WAITING_RESULT' && autoPilotStage !== 'NEXT_RACE_WAIT') {
+      return;
+    }
+
+    // カウントダウンが0に達した際のステージ進行
+    if (autoPilotCountdown <= 0) {
+      if (autoPilotStage === 'WAITING_RESULT') {
+        setAutoPilotStage('FETCHING_RESULT');
+        setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】公式確定結果を取得・照合中...`);
+      } else if (autoPilotStage === 'NEXT_RACE_WAIT') {
+        // 次の巡回対象会場およびレースを計算し、確実に新番組データを取得して進行
+        const next = getNextPatrolTarget({
+          currentVenue: race.venue,
+          currentRaceNo: race.raceNo,
+          config: autoPilotConfig,
+          alreadyVotedKeys: votedRacesRef.current,
+        });
+
+        transitionToPatrolRace(next.nextVenue, next.nextRaceNo);
+      }
+      return;
+    }
+
+    // 1秒刻みのカウントダウン
+    const timer = setInterval(() => {
+      setAutoPilotCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [
+    autoPilotConfig.enabled,
+    autoPilotStage,
+    autoPilotCountdown,
+    race.venue,
+    race.raceNo,
+    autoPilotConfig,
+    transitionToPatrolRace,
+  ]);
+
+  // 全自動運転: アクション実行エンジン（ANALYZING / PREDICTING / VOTING / FETCHING_RESULT）
+  useEffect(() => {
+    if (!autoPilotConfig.enabled || autoPilotStage === 'STOPPED' || autoPilotStage === 'SAFETY_STOP') {
+      return;
+    }
+
+    // カウントダウン待機ステージおよび番組同期ステージは別処理
+    if (
+      autoPilotStage === 'WAITING_RESULT' ||
+      autoPilotStage === 'NEXT_RACE_WAIT' ||
+      autoPilotStage === 'FETCHING_CARD'
+    ) {
+      return;
+    }
+
+    // 同一レース・同一ステージでの多重実行（複数繰り返し）を完全に防止
+    const actionKey = `${race.venue}-${race.raceNo}-${autoPilotStage}`;
+    if (stageExecutionKeyRef.current === actionKey || isProcessingStageRef.current) {
+      return;
+    }
+    stageExecutionKeyRef.current = actionKey;
+
     let isCancelled = false;
 
-    // ステージ 1: ANALYZING (番組・気象条件検査)
+    // ステージ 1: ANALYZING (条件判定・気象基準チェック)
     if (autoPilotStage === 'ANALYZING') {
       const safety = evaluateAutoPilotSafety({
         stats,
@@ -951,29 +1195,35 @@ export default function App() {
       }
 
       if (judgment.isSkipped) {
-        setAutoPilotMessage(`気象見送り (${race.weather.windSpeed}m/s, ${race.weather.waveHeight}cm)。次Rへ待機移行`);
-        addAutoPilotLog('SKIP', `【${race.venue} ${race.raceNo}R】${judgment.reasonTitle} により見送り`);
+        setAutoPilotMessage(`気象見送り (${race.weather.windSpeed}m/s, ${race.weather.waveHeight}cm)。次会場へ巡回移行`);
+        addAutoPilotLog('SKIP', `【${race.venue} 第${race.raceNo}R】${judgment.reasonTitle} により見送り。次会場へスキップ`);
+        votedRacesRef.current.add(`${race.venue}-${race.raceNo}`);
+        setAutoPilotCountdown(2);
         setAutoPilotStage('NEXT_RACE_WAIT');
-        setAutoPilotCountdown(3);
         return;
       }
 
       const timer = setTimeout(() => {
         if (!isCancelled) {
           setAutoPilotStage('PREDICTING');
-          setAutoPilotMessage(`【${race.venue} ${race.raceNo}R】予想生成・資金配分を計算中...`);
+          setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】予想生成・資金配分を計算中...`);
         }
-      }, 700);
+      }, 500);
+
       return () => {
         isCancelled = true;
         clearTimeout(timer);
       };
     }
 
-    // ステージ 2: PREDICTING (予想・配分計算)
+    // ステージ 2: PREDICTING (予想生成・資金配分)
     if (autoPilotStage === 'PREDICTING') {
+      isProcessingStageRef.current = true;
       const timer = setTimeout(async () => {
-        if (isCancelled) return;
+        if (isCancelled) {
+          isProcessingStageRef.current = false;
+          return;
+        }
         try {
           let currentCands: BetCandidate[] = [];
           if (autoPilotConfig.useAIEnhanced) {
@@ -1001,34 +1251,55 @@ export default function App() {
 
           addAutoPilotLog(
             'PREDICT',
-            `【${race.venue} ${race.raceNo}R】予想生成: ${BET_TYPE_LABELS[selectedBetType].label} ${selectedPointCount}点`,
-            `総投資予定: ¥${alloc.totalStake.toLocaleString()}`
+            `【${race.venue} 第${race.raceNo}R】予想生成: ${BET_TYPE_LABELS[selectedBetType].label} ${selectedPointCount}点`,
+            `総投資予定: ¥${alloc.totalStake.toLocaleString()} (本命: ${alloc.updatedCandidates[0]?.combination || '-'})`
           );
+
+          isProcessingStageRef.current = false;
 
           if (autoPilotConfig.executeAutoVote) {
             setAutoPilotStage('VOTING');
             setAutoPilotMessage(`テレボートへ自動投票リクエスト送信中...`);
           } else {
-            setAutoPilotStage('WAITING_RESULT');
             setAutoPilotCountdown(3);
-            setAutoPilotMessage(`【${race.venue} ${race.raceNo}R】レース発走待機中...`);
+            setAutoPilotStage('WAITING_RESULT');
+            setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】レース発走待機中...`);
           }
         } catch (e) {
           console.error('Autopilot predict error:', e);
-          setAutoPilotStage('NEXT_RACE_WAIT');
+          isProcessingStageRef.current = false;
           setAutoPilotCountdown(3);
+          setAutoPilotStage('NEXT_RACE_WAIT');
         }
-      }, 700);
+      }, 500);
+
       return () => {
         isCancelled = true;
         clearTimeout(timer);
+        isProcessingStageRef.current = false;
       };
     }
 
-    // ステージ 3: VOTING (テレボート自動投票)
+    // ステージ 3: VOTING (テレボート自動投票) - 多重投票を完全に防止
     if (autoPilotStage === 'VOTING') {
+      const raceVoteKey = `${race.venue}-${race.raceNo}`;
+
+      // 同一会場・同一レースへの多重投票を完全抑止
+      if (votedRacesRef.current.has(raceVoteKey)) {
+        addAutoPilotLog('INFO', `【${race.venue} 第${race.raceNo}R】は投票済みです。結果待ちへ移行`);
+        setAutoPilotCountdown(2);
+        setAutoPilotStage('WAITING_RESULT');
+        setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】レース発走・確定着順待機中...`);
+        return;
+      }
+      votedRacesRef.current.add(raceVoteKey);
+      isProcessingStageRef.current = true;
+
       const timer = setTimeout(async () => {
-        if (isCancelled) return;
+        if (isCancelled) {
+          isProcessingStageRef.current = false;
+          return;
+        }
         try {
           const voteResult = await executeAutoVote({
             race,
@@ -1043,54 +1314,100 @@ export default function App() {
               addAutoPilotLog(
                 'VOTE',
                 `テレボート投票完了 (${autoVoteConfig.testMode ? 'テスト' : '本番'})`,
-                `投票計 ¥${voteResult.totalVoted.toLocaleString()}`
+                `【${race.venue} 第${race.raceNo}R】${candidates.length}点 計¥${voteResult.totalVoted.toLocaleString()}`
               );
             } else {
               addAutoPilotLog('VOTE', `投票結果: ${voteResult.error}`);
             }
 
-            setAutoPilotStage('WAITING_RESULT');
+            isProcessingStageRef.current = false;
             setAutoPilotCountdown(3);
-            setAutoPilotMessage(`【${race.venue} ${race.raceNo}R】レース発走・確定着順待機中...`);
+            setAutoPilotStage('WAITING_RESULT');
+            setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】レース発走・確定着順待機中...`);
           }
         } catch (e) {
           console.error('Autopilot vote error:', e);
-          setAutoPilotStage('WAITING_RESULT');
+          isProcessingStageRef.current = false;
           setAutoPilotCountdown(3);
+          setAutoPilotStage('WAITING_RESULT');
         }
-      }, 600);
+      }, 500);
+
       return () => {
         isCancelled = true;
         clearTimeout(timer);
+        isProcessingStageRef.current = false;
       };
-    }
-
-    // ステージ 4: WAITING_RESULT (レース進行・カウントダウン待機)
-    if (autoPilotStage === 'WAITING_RESULT') {
-      if (autoPilotCountdown > 0) {
-        const timer = setTimeout(() => {
-          setAutoPilotCountdown((prev) => prev - 1);
-        }, 1000);
-        return () => clearTimeout(timer);
-      } else {
-        setAutoPilotStage('FETCHING_RESULT');
-        setAutoPilotMessage(`【${race.venue} ${race.raceNo}R】公式確定結果を取得・照合中...`);
-      }
     }
 
     // ステージ 5: FETCHING_RESULT (確定結果取得 & 的中照合)
     if (autoPilotStage === 'FETCHING_RESULT') {
+      isProcessingStageRef.current = true;
       const timer = setTimeout(async () => {
-        if (isCancelled) return;
+        if (isCancelled) {
+          isProcessingStageRef.current = false;
+          return;
+        }
+
+        // 1. 公式レース確定チェック（未確定レースでのフライング的中判定を完全防止）
+        const confirmation = checkRaceConfirmation({
+          date: race.date,
+          deadlineTime: race.deadlineTime,
+          venueName: race.venue,
+          raceNo: race.raceNo,
+        });
+
+        // 確定していないレース（発売中・締切前・審判中）の場合は的中判定を絶対に行わない！
+        if (!confirmation.isConfirmed) {
+          isProcessingStageRef.current = false;
+          addAutoPilotLog(
+            'INFO',
+            `【未確定保留】${race.venue} 第${race.raceNo}R（${confirmation.statusText}）`,
+            `締切: ${race.deadlineTime}。公式着順確定前のため的中判断・収支集計は行わず、投票完了として次レースへ巡回を進めます。`
+          );
+          showToast(
+            `【投票受付済】第${race.raceNo}Rは未確定（${confirmation.statusText}）のため的中判定は保留し、次レースへ進みます`,
+            'info'
+          );
+          setLatestResultNotice({
+            venue: race.venue,
+            raceNo: race.raceNo,
+            raceTitle: race.raceTitle,
+            finishOrder: '未確定（着順待機中）',
+            first: 0,
+            second: 0,
+            third: 0,
+            winningTechnique: confirmation.statusText,
+            officialPayout: 0,
+            popularityRank: 0,
+            isHit: false,
+            isConfirmed: false,
+            statusMessage: `【${confirmation.statusText}】締切: ${race.deadlineTime}。公式レース着順確定前のため的中判断は保留されました。`,
+            totalStake: candidates.reduce((sum, c) => sum + (c.stake || 0), 0),
+            totalReturn: 0,
+            profit: 0,
+          });
+
+          const delay = autoPilotConfig.advanceDelaySeconds || 4;
+          setAutoPilotCountdown(delay);
+          setAutoPilotStage('NEXT_RACE_WAIT');
+          setAutoPilotMessage(`【${race.venue} 第${race.raceNo}R】未確定のため判定保留。次レースへ巡回待機中 (${delay}秒)...`);
+          return;
+        }
+
         try {
           const res = await fetchRaceResult({
             date: race.date,
             venueName: race.venue,
             raceNo: race.raceNo,
             boats: race.boats,
+            deadlineTime: race.deadlineTime,
           });
 
-          if (isCancelled) return;
+          if (isCancelled) {
+            isProcessingStageRef.current = false;
+            return;
+          }
 
           const matchedCandidate = candidates.find(
             (c) => isBetHit(c.combination, c.betType || selectedBetType, res.finishOrder) && c.stake > 0
@@ -1146,6 +1463,7 @@ export default function App() {
             officialPayout: res.officialPayout,
             popularityRank: res.popularityRank,
             isHit,
+            isConfirmed: true,
             totalStake,
             totalReturn,
             profit,
@@ -1160,7 +1478,7 @@ export default function App() {
             setConsecutiveLosses(0);
             if (autoPilotConfig.soundAlert) playAutoPilotSound('hit');
             addAutoPilotLog('HIT', `★ 的中！ 着順 ${res.finishOrder} (${payout100}円)`, `純利益 +¥${profit.toLocaleString()}`);
-            showToast(`★ 的中！【${race.venue} ${race.raceNo}R】着順 ${res.finishOrder} (+¥${profit.toLocaleString()})`, 'success');
+            showToast(`★ 的中！【${race.venue} 第${race.raceNo}R】着順 ${res.finishOrder} (+¥${profit.toLocaleString()})`, 'success');
           } else {
             setConsecutiveLosses((prev) => prev + 1);
             addAutoPilotLog('MISS', `不的中 着順 ${res.finishOrder}`, `投資損 -¥${totalStake.toLocaleString()}`);
@@ -1174,6 +1492,8 @@ export default function App() {
             currentBalance: autoVoteConfig.accountBalance,
           });
 
+          isProcessingStageRef.current = false;
+
           if (safetyAfter.shouldStop) {
             setAutoPilotStage('SAFETY_STOP');
             setAutoPilotConfig((prev) => ({ ...prev, enabled: false }));
@@ -1184,39 +1504,29 @@ export default function App() {
             return;
           }
 
+          const delay = autoPilotConfig.advanceDelaySeconds || 4;
+          setAutoPilotCountdown(delay);
           setAutoPilotStage('NEXT_RACE_WAIT');
-          setAutoPilotCountdown(autoPilotConfig.advanceDelaySeconds || 4);
-          setAutoPilotMessage(`次レースへ移行待機中 (${autoPilotConfig.advanceDelaySeconds || 4}秒)...`);
+          setAutoPilotMessage(`次レースへ移行待機中 (${delay}秒)...`);
         } catch (e) {
           console.error('Autopilot fetch result error:', e);
-          setAutoPilotStage('NEXT_RACE_WAIT');
+          isProcessingStageRef.current = false;
           setAutoPilotCountdown(3);
+          setAutoPilotStage('NEXT_RACE_WAIT');
         }
-      }, 700);
+      }, 500);
+
       return () => {
         isCancelled = true;
         clearTimeout(timer);
+        isProcessingStageRef.current = false;
       };
     }
-
-    // ステージ 6: NEXT_RACE_WAIT (次レースへ自動移行)
-    if (autoPilotStage === 'NEXT_RACE_WAIT') {
-      if (autoPilotCountdown > 0) {
-        const timer = setTimeout(() => {
-          setAutoPilotCountdown((prev) => prev - 1);
-        }, 1000);
-        return () => clearTimeout(timer);
-      } else {
-        const nextR = race.raceNo < autoPilotConfig.endRaceNo ? race.raceNo + 1 : autoPilotConfig.startRaceNo;
-        handleFetchRace(race.venue, nextR);
-        setAutoPilotStage('ANALYZING');
-        setAutoPilotMessage(`【${race.venue} ${nextR}R】番組データ同期完了。解析開始...`);
-      }
-    }
   }, [
-    autoPilotConfig,
+    autoPilotConfig.enabled,
     autoPilotStage,
-    autoPilotCountdown,
+    race.venue,
+    race.raceNo,
     stats,
     judgment,
     race,
@@ -1228,7 +1538,6 @@ export default function App() {
     consecutiveLosses,
     history,
     scoredBoats,
-    handleFetchRace,
     addAutoPilotLog,
     showToast,
   ]);
@@ -1389,7 +1698,12 @@ export default function App() {
           autoSessionRaces={autoSessionRaces}
           autoSessionHits={autoSessionHits}
           autoSessionProfit={autoSessionProfit}
+          currentVenue={race.venue}
+          currentRaceNo={race.raceNo}
+          nextTargetVenue={nextPatrolPreview.nextVenue}
+          nextTargetRaceNo={nextPatrolPreview.nextRaceNo}
           onToggleAutoPilot={handleToggleAutoPilot}
+          onToggleTargetMode={handleToggleAutoPilotTargetMode}
           onOpenAutoPilotModal={() => setActiveModal('autoPilot')}
           onForceNextRace={handleForceNextRace}
           onToggleSound={() =>
@@ -1411,11 +1725,13 @@ export default function App() {
           waveThreshold={settings.waveHeightThreshold}
         />
 
-        {/* 確定結果速報カード (結果取得後に自動表示) */}
+        {/* 確定結果 / 未確定案内速報カード (結果取得後に自動表示) */}
         {latestResultNotice && (
           <div
             className={`p-3 rounded-lg border flex flex-wrap items-center justify-between gap-3 shadow-lg select-none animate-in fade-in slide-in-from-top-2 ${
-              latestResultNotice.isHit
+              !latestResultNotice.isConfirmed
+                ? 'bg-gradient-to-r from-amber-950/70 via-slate-900 to-slate-900 border-amber-600/70 text-amber-100'
+                : latestResultNotice.isHit
                 ? 'bg-gradient-to-r from-amber-950/90 via-yellow-950/60 to-slate-900 border-amber-500 text-yellow-100'
                 : 'bg-slate-900 border-slate-700 text-slate-300'
             }`}
@@ -1423,57 +1739,85 @@ export default function App() {
             <div className="flex items-center gap-3">
               <div
                 className={`px-3 py-1.5 rounded font-black text-sm flex items-center gap-1.5 shadow-sm ${
-                  latestResultNotice.isHit
+                  !latestResultNotice.isConfirmed
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                    : latestResultNotice.isHit
                     ? 'bg-amber-400 text-slate-950 animate-bounce'
                     : 'bg-slate-800 text-slate-400'
                 }`}
               >
-                <Award className="w-4 h-4" />
-                <span>{latestResultNotice.isHit ? '★ レース的中！' : '不的中'}</span>
+                {!latestResultNotice.isConfirmed ? (
+                  <>
+                    <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+                    <span>【公式結果 未確定】</span>
+                  </>
+                ) : (
+                  <>
+                    <Award className="w-4 h-4" />
+                    <span>{latestResultNotice.isHit ? '★ レース的中！' : '不的中'}</span>
+                  </>
+                )}
               </div>
 
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-white text-xs">
-                    {latestResultNotice.venue} {latestResultNotice.raceTitle}
-                  </span>
-                  <span className="text-[11px] text-slate-300">確定着順:</span>
-                  <span className="font-mono font-black text-amber-300 text-base tracking-wider">
-                    {latestResultNotice.finishOrder}
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    ({latestResultNotice.winningTechnique} / {latestResultNotice.popularityRank}番人気)
-                  </span>
+              {!latestResultNotice.isConfirmed ? (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-xs">
+                      {latestResultNotice.venue} {latestResultNotice.raceTitle}
+                    </span>
+                    <span className="text-[11px] text-amber-300 font-bold">
+                      {latestResultNotice.winningTechnique}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 mt-0.5">
+                    {latestResultNotice.statusMessage ||
+                      '公式レース終了・着順確定前のため、的中判断は保留されています。レース終了後に再度結果取得を行ってください。'}
+                  </div>
                 </div>
-                <div className="text-[11px] text-slate-300 font-mono mt-0.5">
-                  3連単確定払戻:{' '}
-                  <strong className="text-amber-300">
-                    {latestResultNotice.officialPayout.toLocaleString()}円
-                  </strong>
-                  <span className="mx-2 text-slate-600">|</span>
-                  投資:{' '}
-                  <strong>{latestResultNotice.totalStake.toLocaleString()}円</strong> → 払戻:{' '}
-                  <strong className="text-amber-300">
-                    {latestResultNotice.totalReturn.toLocaleString()}円
-                  </strong>
-                  <span className="mx-2 text-slate-600">|</span>
-                  純利益:{' '}
-                  <span
-                    className={`font-black ${
-                      latestResultNotice.profit > 0
-                        ? 'text-emerald-400'
-                        : latestResultNotice.profit < 0
-                        ? 'text-rose-400'
-                        : 'text-slate-300'
-                    }`}
-                  >
-                    {latestResultNotice.profit > 0
-                      ? `+${latestResultNotice.profit.toLocaleString()}`
-                      : latestResultNotice.profit.toLocaleString()}
-                    円
-                  </span>
+              ) : (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-xs">
+                      {latestResultNotice.venue} {latestResultNotice.raceTitle}
+                    </span>
+                    <span className="text-[11px] text-slate-300">確定着順:</span>
+                    <span className="font-mono font-black text-amber-300 text-base tracking-wider">
+                      {latestResultNotice.finishOrder}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      ({latestResultNotice.winningTechnique} / {latestResultNotice.popularityRank}番人気)
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 font-mono mt-0.5">
+                    3連単確定払戻:{' '}
+                    <strong className="text-amber-300">
+                      {latestResultNotice.officialPayout.toLocaleString()}円
+                    </strong>
+                    <span className="mx-2 text-slate-600">|</span>
+                    投資:{' '}
+                    <strong>{latestResultNotice.totalStake.toLocaleString()}円</strong> → 払戻:{' '}
+                    <strong className="text-amber-300">
+                      {latestResultNotice.totalReturn.toLocaleString()}円
+                    </strong>
+                    <span className="mx-2 text-slate-600">|</span>
+                    純利益:{' '}
+                    <span
+                      className={`font-black ${
+                        latestResultNotice.profit > 0
+                          ? 'text-emerald-400'
+                          : latestResultNotice.profit < 0
+                          ? 'text-rose-400'
+                          : 'text-slate-300'
+                      }`}
+                    >
+                      {latestResultNotice.profit > 0
+                        ? `+${latestResultNotice.profit.toLocaleString()}`
+                        : latestResultNotice.profit.toLocaleString()}
+                      円
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

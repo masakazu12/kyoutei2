@@ -25,7 +25,12 @@ interface AutoPilotControlBarProps {
   autoSessionRaces: number;
   autoSessionHits: number;
   autoSessionProfit: number;
+  currentVenue?: string;
+  currentRaceNo?: number;
+  nextTargetVenue?: string;
+  nextTargetRaceNo?: number;
   onToggleAutoPilot: () => void;
+  onToggleTargetMode?: () => void;
   onOpenAutoPilotModal: () => void;
   onForceNextRace?: () => void;
   onToggleSound?: () => void;
@@ -39,7 +44,12 @@ export const AutoPilotControlBar: React.FC<AutoPilotControlBarProps> = ({
   autoSessionRaces,
   autoSessionHits,
   autoSessionProfit,
+  currentVenue,
+  currentRaceNo,
+  nextTargetVenue,
+  nextTargetRaceNo,
   onToggleAutoPilot,
+  onToggleTargetMode,
   onOpenAutoPilotModal,
   onForceNextRace,
   onToggleSound,
@@ -49,6 +59,7 @@ export const AutoPilotControlBar: React.FC<AutoPilotControlBarProps> = ({
   const isProfit = autoSessionProfit > 0;
   const isLoss = autoSessionProfit < 0;
   const hitRate = autoSessionRaces > 0 ? ((autoSessionHits / autoSessionRaces) * 100).toFixed(1) : '0.0';
+  const isAllVenues = config.targetMode === 'all_venues';
 
   return (
     <div
@@ -61,7 +72,7 @@ export const AutoPilotControlBar: React.FC<AutoPilotControlBarProps> = ({
       }`}
     >
       {/* 左エリア: メイン切替スイッチ & ステージバッジ */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap">
         {/* 自動運転 START / STOP ボタン */}
         <button
           onClick={onToggleAutoPilot}
@@ -75,15 +86,32 @@ export const AutoPilotControlBar: React.FC<AutoPilotControlBarProps> = ({
           {isRunning ? (
             <>
               <Square className="w-3.5 h-3.5 fill-current" />
-              <span>自動運転 停止 (STOP)</span>
+              <span>停止 (STOP)</span>
             </>
           ) : (
             <>
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>全自動運転 START (巡回稼働)</span>
+              <span>全自動運転 START</span>
             </>
           )}
         </button>
+
+        {/* 巡回モード ワンクリック切替ボタン */}
+        {onToggleTargetMode && (
+          <button
+            onClick={onToggleTargetMode}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] font-bold transition-all cursor-pointer ${
+              isAllVenues
+                ? 'bg-cyan-950/70 border-cyan-500/80 text-cyan-200 hover:bg-cyan-900/80 shadow-sm shadow-cyan-950'
+                : 'bg-amber-950/70 border-amber-500/80 text-amber-200 hover:bg-amber-900/80 shadow-sm shadow-amber-950'
+            }`}
+            title="クリックで【全国24場巡回】と【単一会場連続】を即座に切り替え"
+          >
+            <RotateCw className="w-3 h-3 text-current" />
+            <span>{isAllVenues ? '全国24場 横断巡回' : `単一会場連続 (${currentVenue || '現会場'})`}</span>
+            <span className="text-[9px] opacity-75 ml-0.5 underline">切替</span>
+          </button>
+        )}
 
         {/* 稼働ステータスインジケーター */}
         <div className="flex items-center gap-2">
@@ -103,9 +131,19 @@ export const AutoPilotControlBar: React.FC<AutoPilotControlBarProps> = ({
           )}
         </div>
 
+        {/* 巡回先プレビュー（全会場巡回時） */}
+        {nextTargetVenue && (
+          <div className="hidden lg:flex items-center gap-1 text-[11px] text-slate-300 bg-slate-900 border border-slate-800 rounded px-2 py-0.5 font-sans">
+            <span className="text-slate-500">巡回先:</span>
+            <span className="text-cyan-300 font-bold">
+              {currentVenue} {currentRaceNo ? `${currentRaceNo}R` : ''} ➔ {nextTargetVenue} {nextTargetRaceNo ? `${nextTargetRaceNo}R` : ''}
+            </span>
+          </div>
+        )}
+
         {/* 進行中メッセージ */}
         <div className="text-xs text-slate-300 max-w-xs md:max-w-md truncate font-sans">
-          <span className="text-slate-400 mr-1 text-[11px]">現在処理:</span>
+          <span className="text-slate-400 mr-1 text-[11px]">現在:</span>
           <span className="font-medium text-slate-100">{currentMessage || meta.description}</span>
         </div>
       </div>

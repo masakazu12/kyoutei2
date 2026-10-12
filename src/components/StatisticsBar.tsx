@@ -249,6 +249,7 @@ export const StatisticsBar: React.FC<StatisticsBarProps> = ({
             selectedVenueFilter={selectedVenueFilter}
             onSelectVenueFilter={onSelectVenueFilter}
             onImportRealData={onImportRealData}
+            onClose={() => setShowVenueStats(false)}
           />
         </div>
       )}

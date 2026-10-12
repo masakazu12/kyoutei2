@@ -181,11 +181,90 @@ export const AutoPilotModal: React.FC<AutoPilotModalProps> = ({
                     <div>
                       <div className="font-bold text-slate-200">全国24場 横断巡回</div>
                       <div className="text-[11px] text-slate-400 mt-0.5">
-                        本日開催中の全国各場を締切時刻の早い順に自動巡回して投票・結果取得します。
+                        全国各場を1レースごとに順次巡回して分析・投票・確定結果取得を自動反復します。
                       </div>
                     </div>
                   </label>
                 </div>
+
+                {/* 全会場巡回時の対象会場カスタマイズ */}
+                {config.targetMode === 'all_venues' && (
+                  <div className="p-2.5 bg-slate-900/90 rounded border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <div className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+                        <span>巡回対象会場の選択</span>
+                        <span className="text-[10px] text-slate-400">
+                          ({config.targetVenues.length === 0 ? '全24場すべて巡回中' : `${config.targetVenues.length}場を選択中`})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => onUpdateConfig({ targetVenues: [] })}
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                            config.targetVenues.length === 0
+                              ? 'bg-cyan-900 border-cyan-500 text-cyan-200 font-bold'
+                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          全24場すべて
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateConfig({
+                              targetVenues: ['桐生', '蒲郡', '住之江', '丸亀', '下関', '若松', '大村'],
+                            })
+                          }
+                          className="text-[10px] px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded transition-colors cursor-pointer"
+                        >
+                          ナイター (7場)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateConfig({
+                              targetVenues: ['鳴門', '徳山', '芦屋', '唐津'],
+                            })
+                          }
+                          className="text-[10px] px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded transition-colors cursor-pointer"
+                        >
+                          モーニング (4場)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 会場選択グリッド */}
+                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1 pt-1">
+                      {VENUES.map((v) => {
+                        const isSelected =
+                          config.targetVenues.length === 0 || config.targetVenues.includes(v.name);
+                        return (
+                          <button
+                            key={v.code}
+                            type="button"
+                            onClick={() => {
+                              const current = config.targetVenues.length === 0 ? VENUES.map((item) => item.name) : [...config.targetVenues];
+                              const next = current.includes(v.name)
+                                ? current.filter((n) => n !== v.name)
+                                : [...current, v.name];
+                              onUpdateConfig({
+                                targetVenues: next.length === VENUES.length ? [] : next,
+                              });
+                            }}
+                            className={`px-1.5 py-1 rounded text-center text-[11px] font-bold border transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-cyan-950/80 border-cyan-500 text-cyan-200 shadow-sm shadow-cyan-950'
+                                : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'
+                            }`}
+                          >
+                            {v.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* レース範囲選択 */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-850">

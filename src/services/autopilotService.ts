@@ -21,6 +21,13 @@ export const AUTOPILOT_STAGE_META: Record<AutoPilotStage, StageMeta> = {
     dotClass: 'bg-slate-500',
     description: '自動運転は待機しています。STARTボタンで開始します。',
   },
+  FETCHING_CARD: {
+    stage: 'FETCHING_CARD',
+    label: '番組同期中',
+    badgeClass: 'bg-teal-950/80 text-teal-300 border-teal-600',
+    dotClass: 'bg-teal-400 animate-spin',
+    description: '次会場の出走表・展示・番組データを受信・解析準備中...',
+  },
   ANALYZING: {
     stage: 'ANALYZING',
     label: '番組・気象解析',
@@ -183,4 +190,119 @@ export function evaluateAutoPilotSafety(params: {
   }
 
   return { shouldStop: false, reason: '' };
+}
+
+/**
+ * 全国24競艇場 完全巡回リスト
+ */
+export const ALL_24_VENUES: string[] = [
+  '住之江',
+  '大村',
+  '桐生',
+  '平和島',
+  '蒲郡',
+  '戸田',
+  '丸亀',
+  '鳴門',
+  '徳山',
+  '尼崎',
+  '児島',
+  '宮島',
+  '下関',
+  '若松',
+  '芦屋',
+  '福岡',
+  '唐津',
+  '江戸川',
+  '多摩川',
+  '浜名湖',
+  '常滑',
+  '津',
+  '三国',
+  'びわこ',
+];
+
+export const DEFAULT_PATROL_VENUES: string[] = ALL_24_VENUES;
+
+/**
+ * 次の巡回対象レースおよび会場を決定（全会場巡回 vs 単一会場連続）
+ * すでに投票済みの会場・レースを自動検知して別会場へスキップし、多重投票を完全抑止
+ */
+export function getNextPatrolTarget(params: {
+  currentVenue: string;
+  currentRaceNo: number;
+  config: AutoPilotConfig;
+  availableVenues?: string[];
+  alreadyVotedKeys?: Set<string>;
+}): { nextVenue: string; nextRaceNo: number; isRoundComplete: boolean } {
+  const { currentVenue, currentRaceNo, config, availableVenues, alreadyVotedKeys } = params;
+
+  // 1. 単一会場 連続運転モード (1R ➔ 12R)
+  if (config.targetMode === 'single_venue') {
+    const startR = config.startRaceNo || 1;
+    const endR = config.endRaceNo || 12;
+    let nextRaceNo = currentRaceNo < endR ? currentRaceNo + 1 : startR;
+    let isRoundComplete = currentRaceNo >= endR;
+
+    if (alreadyVotedKeys) {
+      let attempts = 0;
+      while (alreadyVotedKeys.has(`${currentVenue}-${nextRaceNo}`) && attempts < 12) {
+        nextRaceNo = nextRaceNo < endR ? nextRaceNo + 1 : startR;
+        if (nextRaceNo === startR) isRoundComplete = true;
+        attempts++;
+      }
+    }
+
+    return {
+      nextVenue: currentVenue,
+      nextRaceNo,
+      isRoundComplete,
+    };
+  }
+
+  // 2. 全国24場横断 巡回モード (全会場を1レースごとに切り替えて巡回)
+  const venuePool =
+    config.targetVenues && config.targetVenues.length > 0
+      ? config.targetVenues
+      : availableVenues && availableVenues.length > 0
+      ? availableVenues
+      : ALL_24_VENUES;
+
+  const currentIdx = venuePool.indexOf(currentVenue);
+  // 現在会場の次にある会場を選択（見つからない場合は先頭会場）
+  let nextIdx = currentIdx >= 0 ? (currentIdx + 1) % venuePool.length : 0;
+  let nextVenue = venuePool[nextIdx];
+
+  // 全会場を1巡した場合はレース番号を進める
+  let isRoundComplete = nextIdx === 0;
+  let nextRaceNo = currentRaceNo;
+
+  if (isRoundComplete) {
+    const startR = config.startRaceNo || 1;
+    const endR = config.endRaceNo || 12;
+    nextRaceNo = currentRaceNo < endR ? currentRaceNo + 1 : startR;
+  }
+
+  // 既に投票済みの組み合わせはスキップして次の未投票会場・レースを探す
+  if (alreadyVotedKeys && alreadyVotedKeys.size > 0) {
+    let attempts = 0;
+    const maxAttempts = venuePool.length * 12;
+    while (alreadyVotedKeys.has(`${nextVenue}-${nextRaceNo}`) && attempts < maxAttempts) {
+      nextIdx = (nextIdx + 1) % venuePool.length;
+      nextVenue = venuePool[nextIdx];
+      if (nextIdx === 0) {
+        const startR = config.startRaceNo || 1;
+        const endR = config.endRaceNo || 12;
+        nextRaceNo = nextRaceNo < endR ? nextRaceNo + 1 : startR;
+        isRoundComplete = true;
+      }
+      attempts++;
+    }
+  }
+
+  return {
+    nextVenue,
+    nextRaceNo,
+    isRoundComplete,
+  };
 }

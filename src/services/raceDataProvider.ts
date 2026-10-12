@@ -1,5 +1,6 @@
 import { BoatData, BoatGrade, RaceInfo, WeatherCondition, WindDirection, WeatherType } from '../types/kyotei';
 import { VENUES } from '../constants/venues';
+import { checkRaceConfirmation } from './deadlineService';
 
 /**
  * 11.3 & F14: 開催レース外部データ取得サービス (IRaceDataProvider)
@@ -29,6 +30,7 @@ export interface OfficialRaceResult {
   venueName: string;
   raceNo: number;
   weatherAtFinish: WeatherCondition;
+  isConfirmed: boolean; // 公式着順確定フラグ
 }
 
 // 選手マスターデータベース（実在する有力選手・一般選手）
@@ -301,8 +303,23 @@ export async function fetchRaceResult(params: {
   venueName: string;
   raceNo: number;
   boats: BoatData[];
+  deadlineTime?: string;
+  forceSimulate?: boolean;
 }): Promise<OfficialRaceResult> {
-  const { date, venueName, raceNo, boats } = params;
+  const { date, venueName, raceNo, boats, deadlineTime, forceSimulate } = params;
+
+  // 公式レース確定チェック（未確定レースでのフライング的中判定を完全防止）
+  if (!forceSimulate) {
+    const confirmation = checkRaceConfirmation({
+      date,
+      deadlineTime,
+      venueName,
+      raceNo,
+    });
+    if (!confirmation.isConfirmed) {
+      throw new Error(`【レース未確定】${confirmation.statusText}（${confirmation.detail}）`);
+    }
+  }
 
   // 通信遅延シミュレーション (400ms)
   await new Promise((resolve) => setTimeout(resolve, 400));
@@ -400,5 +417,6 @@ export async function fetchRaceResult(params: {
       temperature: 18.5,
       waterTemperature: 19.0,
     },
+    isConfirmed: true,
   };
 }
