@@ -152,19 +152,35 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => {
             </ul>
           </div>
 
-          {/* 6. Gemini AI予想・深層分析機能について */}
+          {/* 7. 多券種・購入点数選択機能 */}
           <div className="space-y-1.5">
-            <h4 className="font-bold text-purple-400 border-b border-slate-800 pb-1 flex items-center gap-1">
+            <h4 className="font-bold text-cyan-400 border-b border-slate-800 pb-1 flex items-center gap-1">
               <CheckCircle className="w-3.5 h-3.5" />
-              <span>6. Gemini AI特選予想・水面展開深層分析</span>
+              <span>7. 多券種・購入点数選択機能</span>
             </h4>
             <p className="text-slate-300">
-              Google Gemini 3.8 Flash AI を活用し、全国24場の水面特性（淡水・海水・汽水）、風向・風速・波高、各艇の展示タイムおよび機力・勝率を深層推論します。
+              ユーザーの投資戦略に合わせて、舟券種別（7種類）および購入点数（1〜12点）を自由に選択・切り替え可能です。
             </p>
             <ul className="list-disc list-inside space-y-1 text-slate-300 pl-1">
-              <li><strong className="text-white">レース展開見解 & 注目艇：</strong>本命軸艇（◎）、対抗艇（○）、穴艇（▲）の選出根拠とスリット攻防キーをプロ視点で提示。</li>
-              <li><strong className="text-white">AI厳選5点買い目：</strong>オッズと資金配分アルゴリズムを連動させ、1クリックでメインテーブルに適用可能。</li>
-              <li><strong className="text-white">環境適応：</strong>追い風による差し展開、向かい風によるダッシュまくり展開など、気象変動に応じて即座に再分析します。</li>
+              <li><strong className="text-white">対応舟券種別：</strong>3連単、3連複、2連単、2連複、単勝、複勝、拡連複の全7種目に対応。</li>
+              <li><strong className="text-white">可変点数：</strong>極選1点〜12点まで、艇評価指数に基づいて有力な買い目を自動選抜。</li>
+              <li><strong className="text-white">リアル市場オッズ算出：</strong>選択した券種（例: 2連単、3連複など）に応じた適正オッズを自動シミュレート。</li>
+            </ul>
+          </div>
+
+          {/* 8. 全国24場別 収支・的中率・回収率 分析 */}
+          <div className="space-y-1.5">
+            <h4 className="font-bold text-amber-400 border-b border-slate-800 pb-1 flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>8. 全国24場別 収支・的中率・回収率 分析マトリクス</span>
+            </h4>
+            <p className="text-slate-300">
+              各会場（住之江、大村、桐生、平和島、蒲郡、尼崎等）ごとのレース数、的中数・的中率(%)、総投資額、総払戻額、純利益・損益、回収率(%)を詳細に集計・可視化します。
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-slate-300 pl-1">
+              <li><strong className="text-white">最優秀会場ハイライト：</strong>回収率No.1、純利益トップ、的中率トップの会場を自動抽出。</li>
+              <li><strong className="text-white">並び替え & 抽出：</strong>回収率順・損益順・的中率順のソートや、指定会場の履歴絞り込みに対応。</li>
+              <li><strong className="text-white">公式確定実データ読込：</strong>過去の公式確定レース実績パックをワンクリックで一括インポートし、会場別相性を検証可能。</li>
             </ul>
           </div>
         </div>

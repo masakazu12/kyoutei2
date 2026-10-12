@@ -1,10 +1,25 @@
 import React from 'react';
-import { BetCandidate } from '../types/kyotei';
+import { BetCandidate, BetType, BET_TYPE_LABELS } from '../types/kyotei';
 import { BOAT_COLORS } from '../constants/venues';
-import { Play, Calculator, RefreshCw, CheckCircle, TrendingUp, AlertCircle, Zap, Sparkles } from 'lucide-react';
+import {
+  Play,
+  Calculator,
+  RefreshCw,
+  CheckCircle,
+  TrendingUp,
+  AlertCircle,
+  Zap,
+  Sparkles,
+  Ticket,
+  Hash,
+} from 'lucide-react';
 
 interface PredictionSectionProps {
   candidates: BetCandidate[];
+  currentBetType: BetType;
+  pointCount: number;
+  onChangeBetType: (type: BetType) => void;
+  onChangePointCount: (points: number) => void;
   onUpdateOdds: (combination: string, odds: number) => void;
   onRunPrediction: () => void;
   onRunAIPrediction?: () => void;
@@ -23,6 +38,10 @@ interface PredictionSectionProps {
 
 export const PredictionSection: React.FC<PredictionSectionProps> = ({
   candidates,
+  currentBetType = '3t',
+  pointCount = 5,
+  onChangeBetType,
+  onChangePointCount,
   onUpdateOdds,
   onRunPrediction,
   onRunAIPrediction,
@@ -39,6 +58,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
   maxOdds,
 }) => {
   const renderBoatBadge = (num: number) => {
+    if (!num || num <= 0) return null;
     const color = BOAT_COLORS[num] || BOAT_COLORS[1];
     return (
       <span
@@ -52,27 +72,93 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
 
   const totalStake = candidates.reduce((sum, c) => sum + (c.stake || 0), 0);
   const hasBets = candidates.length > 0;
-  const hasAllocations = candidates.some((c) => c.stake > 0);
+
+  const betTypeOptions: BetType[] = ['3t', '3f', '2t', '2f', '1t', '1f', 'wide'];
+  const maxAllowedPoints = BET_TYPE_LABELS[currentBetType]?.maxPoints ?? 12;
+
+  // 点数クイック選択肢（券種の上限に合わせる）
+  const pointOptions = [1, 2, 3, 4, 5, 6, 8, 10, 12].filter(p => p <= maxAllowedPoints);
+
+  const activeLabel = BET_TYPE_LABELS[currentBetType]?.label || '3連単';
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded p-3 select-none">
-      {/* セクション見出し & コマンドボタン群 */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+    <div className="bg-slate-900/90 border border-slate-800 rounded p-3 select-none space-y-2.5">
+      {/* 1. 券種・点数 選択コントロールバー */}
+      <div className="bg-slate-950 p-2 rounded border border-slate-800/90 flex flex-wrap items-center justify-between gap-2">
+        {/* 券種選択 */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 text-[11px] font-bold text-slate-300 mr-1">
+            <Ticket className="w-3.5 h-3.5 text-blue-400" />
+            <span>舟券種別:</span>
+          </div>
+          <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded border border-slate-800">
+            {betTypeOptions.map((type) => {
+              const info = BET_TYPE_LABELS[type];
+              const isSelected = currentBetType === type;
+              return (
+                <button
+                  key={type}
+                  onClick={() => onChangeBetType(type)}
+                  className={`px-2 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                  title={info.desc}
+                >
+                  {info.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 点数選択 */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 text-[11px] font-bold text-slate-300 mr-1">
+            <Hash className="w-3.5 h-3.5 text-emerald-400" />
+            <span>点数:</span>
+          </div>
+          <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded border border-slate-800">
+            {pointOptions.map((pts) => {
+              const isSelected = pointCount === pts;
+              return (
+                <button
+                  key={pts}
+                  onClick={() => onChangePointCount(pts)}
+                  className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  {pts}点
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. セクション見出し & コマンドボタン群 */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-100 text-xs">本命5点型 3連単 予想候補 & 資金配分</span>
-          <span className="text-[11px] text-slate-400">
-            （軸艇＋有力艇流し＋逆転1点、最大5点絞り込み）
+          <span className="font-bold text-slate-100 text-xs">
+            【{activeLabel} {pointCount}点買い】 予想候補 & 資金配分
+          </span>
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
+            （{BET_TYPE_LABELS[currentBetType]?.desc}）
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
             onClick={onRunPrediction}
             className="flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs shadow transition-colors cursor-pointer"
-            title="出走表から本命5点を生成"
+            title={`出走表から${activeLabel} ${pointCount}点を生成`}
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>5点予想実行</span>
+            <span>{pointCount}点予想実行</span>
           </button>
 
           {/* AI予想実行ボタン */}
@@ -84,7 +170,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
               title="Gemini 3.8 Flash AI による水面・機力・展開深層分析＆AI特選買い目導出"
             >
               <Sparkles className={`w-3.5 h-3.5 text-amber-300 fill-current ${isAILoading ? 'animate-spin' : ''}`} />
-              <span>{isAILoading ? 'AI分析中...' : 'AI予想実行'}</span>
+              <span>{isAILoading ? 'AI分析中...' : 'AI予想'}</span>
             </button>
           )}
 
@@ -92,7 +178,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
             onClick={onSimulateOdds}
             disabled={!hasBets}
             className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-medium text-xs transition-colors disabled:opacity-40 cursor-pointer"
-            title="リアルなオッズを自動設定"
+            title={`${activeLabel}のリアルオッズを自動算出`}
           >
             <RefreshCw className="w-3 h-3 text-cyan-400" />
             <span>オッズ生成</span>
@@ -147,10 +233,10 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
         </div>
       </div>
 
-      {/* 買い目テーブル */}
+      {/* 3. 買い目テーブル */}
       {candidates.length === 0 ? (
         <div className="py-8 text-center text-slate-400 text-xs border border-dashed border-slate-800 rounded bg-slate-950/40">
-          「5点予想実行」ボタンを押すと、艇評価指数に基づく本命5点の買い目とオッズが生成されます。
+          「{pointCount}点予想実行」ボタンを押すと、艇評価指数に基づく{activeLabel} {pointCount}点の買い目とオッズが生成されます。
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -158,7 +244,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
             <thead>
               <tr className="bg-slate-950/80 text-slate-400 border-b border-slate-800 text-[11px]">
                 <th className="py-1 px-2 w-12 text-center">順位</th>
-                <th className="py-1 px-3">3連単 買い目</th>
+                <th className="py-1 px-3">{activeLabel} 買い目</th>
                 <th className="py-1 px-2 text-right">評価スコア</th>
                 <th className="py-1 px-2 text-right">予測確率</th>
                 <th className="py-1 px-3 text-right">オッズ(倍)</th>
@@ -173,6 +259,10 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
                 const isOddsLow = c.odds > 0 && c.odds < minOdds;
                 const isOddsHigh = c.odds > maxOdds;
 
+                // 買い目の視覚的表示
+                const isCompound = c.combination.includes('=');
+                const delimiter = isCompound ? '=' : '-';
+
                 return (
                   <tr
                     key={c.combination}
@@ -185,22 +275,25 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
                       <span className="font-bold text-slate-300">#{c.rank}</span>
                     </td>
 
-                    {/* 買い目（3連単） */}
+                    {/* 買い目（可変券種対応） */}
                     <td className="py-1.5 px-3 font-sans">
                       <div className="flex items-center gap-1">
                         {renderBoatBadge(c.first)}
-                        <span className="text-slate-500 font-bold">-</span>
-                        {renderBoatBadge(c.second)}
-                        <span className="text-slate-500 font-bold">-</span>
-                        {renderBoatBadge(c.third)}
+                        {c.second > 0 && (
+                          <>
+                            <span className="text-slate-500 font-bold">{delimiter}</span>
+                            {renderBoatBadge(c.second)}
+                          </>
+                        )}
+                        {c.third > 0 && (
+                          <>
+                            <span className="text-slate-500 font-bold">{delimiter}</span>
+                            {renderBoatBadge(c.third)}
+                          </>
+                        )}
                         <span className="ml-2 font-mono text-xs font-bold text-slate-200">
                           {c.combination}
                         </span>
-                        {c.rank === 5 && (
-                          <span className="text-[10px] text-amber-400 font-sans ml-1">
-                            (逆転候補)
-                          </span>
-                        )}
                       </div>
                     </td>
 
@@ -219,7 +312,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => onUpdateOdds(c.combination, Math.max(Number((c.odds - 0.5).toFixed(1)), 1.0))}
-                          className="w-4 h-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-mono"
+                          className="w-4 h-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-mono cursor-pointer"
                           title="-0.5倍"
                         >
                           -
@@ -237,7 +330,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
                         />
                         <button
                           onClick={() => onUpdateOdds(c.combination, Number((c.odds + 0.5).toFixed(1)))}
-                          className="w-4 h-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-mono"
+                          className="w-4 h-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-mono cursor-pointer"
                           title="+0.5倍"
                         >
                           +
@@ -285,7 +378,7 @@ export const PredictionSection: React.FC<PredictionSectionProps> = ({
             <tfoot>
               <tr className="bg-slate-950 text-slate-200 border-t border-slate-700 font-bold text-xs">
                 <td colSpan={5} className="py-2 px-3 text-right">
-                  合計購入予定額:
+                  合計購入予定額 ({activeLabel} {candidates.length}点):
                 </td>
                 <td className="py-2 px-3 text-right text-emerald-400 font-black font-mono text-sm">
                   {totalStake.toLocaleString()} 円

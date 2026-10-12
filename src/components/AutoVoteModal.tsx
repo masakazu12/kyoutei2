@@ -17,7 +17,7 @@ import {
   DollarSign,
   Zap,
 } from 'lucide-react';
-import { RaceInfo, BetCandidate } from '../types/kyotei';
+import { RaceInfo, BetCandidate, BET_TYPE_LABELS } from '../types/kyotei';
 import {
   AutoVoteConfig,
   VoteLogItem,

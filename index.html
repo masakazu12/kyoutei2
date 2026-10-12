@@ -4,52 +4,110 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Browser Extension Error Shield (MetaMask, Web3 injected scripts, inpage.js)
+      // -------------------------------------------------------------
+      // Browser Extension Error Shield (MetaMask, Web3, Inpage scripts)
+      // Completely suppresses non-app external extension connection errors
+      // -------------------------------------------------------------
       (function() {
-        function isExtensionError(source, message) {
+        function isExtensionError(target) {
+          if (!target) return false;
           try {
             var str = '';
-            if (typeof source === 'string') str += source + ' ';
-            if (typeof message === 'string') str += message + ' ';
-            if (source && source.stack) str += source.stack + ' ';
-            if (message && message.stack) str += message.stack + ' ';
-            if (source && source.message) str += source.message + ' ';
-            if (message && message.message) str += message.message + ' ';
-            return /chrome-extension:|moz-extension:|safari-extension:|metamask|inpage\.js|Failed to connect to MetaMask/i.test(str);
+            if (typeof target === 'string') {
+              str = target;
+            } else if (typeof target === 'object') {
+              if (target.message) str += target.message + ' ';
+              if (target.reason) {
+                var r = target.reason;
+                str += (r.message || r.stack || String(r)) + ' ';
+              }
+              if (target.filename) str += target.filename + ' ';
+              if (target.stack) str += target.stack + ' ';
+              if (target.error) {
+                var err = target.error;
+                str += (err.message || err.stack || String(err)) + ' ';
+              }
+              if (target.data) {
+                try { str += JSON.stringify(target.data) + ' '; } catch(e) {}
+              }
+              str += String(target) + ' ';
+            }
+            return /chrome-extension:|moz-extension:|safari-extension:|inpage\.js|metamask|Failed to connect to MetaMask/i.test(str);
           } catch (e) {
             return false;
           }
         }
 
-        // 1. Classic window.onerror - Returning true stops reporting to browser/parent
-        var prevOnError = window.onerror;
-        window.onerror = function(msg, url, line, col, err) {
-          if (isExtensionError(url, msg) || isExtensionError('', err)) {
-            return true;
-          }
-          if (typeof prevOnError === 'function') {
-            return prevOnError.apply(this, arguments);
-          }
-          return false;
-        };
+        // 1. Wrap EventTarget.prototype.addEventListener
+        // Ensures ANY error or unhandledrejection listener registered anywhere in the environment
+        // is wrapped and will never receive extension connection errors.
+        try {
+          var origAddEventListener = EventTarget.prototype.addEventListener;
+          EventTarget.prototype.addEventListener = function(type, listener, options) {
+            if ((type === 'error' || type === 'unhandledrejection') && typeof listener === 'function') {
+              var original = listener;
+              var wrapped = function(event) {
+                if (isExtensionError(event) || (event && isExtensionError(event.reason))) {
+                  if (event && event.preventDefault) event.preventDefault();
+                  if (event && event.stopImmediatePropagation) event.stopImmediatePropagation();
+                  return;
+                }
+                return original.apply(this, arguments);
+              };
+              return origAddEventListener.call(this, type, wrapped, options);
+            }
+            return origAddEventListener.apply(this, arguments);
+          };
+        } catch (e) {}
 
-        // 2. window.onunhandledrejection
-        var prevOnUnhandled = window.onunhandledrejection;
-        window.onunhandledrejection = function(e) {
-          if (e && isExtensionError('', e.reason)) {
-            if (e.preventDefault) e.preventDefault();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            return true;
-          }
-          if (typeof prevOnUnhandled === 'function') {
-            return prevOnUnhandled.apply(this, arguments);
-          }
-          return false;
-        };
+        // 2. Intercept window.onerror via Object.defineProperty
+        var _onerror = null;
+        try {
+          Object.defineProperty(window, 'onerror', {
+            configurable: true,
+            enumerable: true,
+            get: function() { return _onerror; },
+            set: function(fn) {
+              if (typeof fn !== 'function') {
+                _onerror = null;
+                return;
+              }
+              _onerror = function(msg, url, line, col, err) {
+                if (isExtensionError(msg) || isExtensionError(url) || isExtensionError(err)) {
+                  return true;
+                }
+                return fn.apply(this, arguments);
+              };
+            }
+          });
+        } catch (e) {}
 
-        // 3. Capture-phase error & unhandledrejection listeners
+        // 3. Intercept window.onunhandledrejection via Object.defineProperty
+        var _onunhandled = null;
+        try {
+          Object.defineProperty(window, 'onunhandledrejection', {
+            configurable: true,
+            enumerable: true,
+            get: function() { return _onunhandled; },
+            set: function(fn) {
+              if (typeof fn !== 'function') {
+                _onunhandled = null;
+                return;
+              }
+              _onunhandled = function(event) {
+                if (event && (isExtensionError(event) || isExtensionError(event.reason))) {
+                  if (event.preventDefault) event.preventDefault();
+                  return true;
+                }
+                return fn.apply(this, arguments);
+              };
+            }
+          });
+        } catch (e) {}
+
+        // 4. Capture-phase fallback listeners
         window.addEventListener('error', function(e) {
-          if (isExtensionError(e.filename, e.message) || isExtensionError('', e.error)) {
+          if (isExtensionError(e.filename) || isExtensionError(e.message) || isExtensionError(e.error)) {
             e.stopImmediatePropagation();
             e.preventDefault();
             return true;
@@ -57,20 +115,34 @@
         }, true);
 
         window.addEventListener('unhandledrejection', function(e) {
-          if (e && isExtensionError('', e.reason)) {
+          if (e && (isExtensionError(e.reason) || isExtensionError(e))) {
             e.stopImmediatePropagation();
             e.preventDefault();
             return true;
           }
         }, true);
 
-        // 4. console.error & console.warn filter
+        // 5. Intercept postMessage to parent frame (stops reporting to host container)
+        try {
+          var origPostMessage = window.postMessage;
+          window.postMessage = function(message, targetOrigin, transfer) {
+            if (isExtensionError(message)) return;
+            return origPostMessage.apply(this, arguments);
+          };
+          if (window.parent && window.parent !== window) {
+            var origParentPost = window.parent.postMessage;
+            window.parent.postMessage = function(message, targetOrigin, transfer) {
+              if (isExtensionError(message)) return;
+              return origParentPost.apply(this, arguments);
+            };
+          }
+        } catch (e) {}
+
+        // 6. Suppress console.error / console.warn for extension noise
         var origConsoleError = console.error;
         console.error = function() {
           for (var i = 0; i < arguments.length; i++) {
-            if (isExtensionError('', arguments[i])) {
-              return;
-            }
+            if (isExtensionError(arguments[i])) return;
           }
           return origConsoleError.apply(console, arguments);
         };
@@ -78,9 +150,7 @@
         var origConsoleWarn = console.warn;
         console.warn = function() {
           for (var i = 0; i < arguments.length; i++) {
-            if (isExtensionError('', arguments[i])) {
-              return;
-            }
+            if (isExtensionError(arguments[i])) return;
           }
           return origConsoleWarn.apply(console, arguments);
         };

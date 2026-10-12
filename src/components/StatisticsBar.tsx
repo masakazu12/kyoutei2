@@ -1,30 +1,52 @@
 import React, { useState } from 'react';
-import { DayStatistics, RaceHistoryRecord } from '../types/kyotei';
-import { TrendingUp, Award, DollarSign, History, AlertCircle, ChevronDown, ChevronUp, BarChart2, Trash2 } from 'lucide-react';
+import { DayStatistics, RaceHistoryRecord, VenueStatistics } from '../types/kyotei';
+import {
+  TrendingUp,
+  Award,
+  DollarSign,
+  History,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  BarChart2,
+  Trash2,
+  Building2,
+  CheckCircle2,
+} from 'lucide-react';
 import { RaceTrendChart } from './RaceTrendChart';
+import { VenueStatisticsPanel } from './VenueStatisticsPanel';
 
 interface StatisticsBarProps {
   stats: DayStatistics;
+  venueStats: VenueStatistics[];
   history: RaceHistoryRecord[];
   dailyProfitTarget: number;
   dailyLossLimit: number;
   onOpenHistory: () => void;
   onClearHistory?: () => void;
+  onImportRealData?: () => void;
+  selectedVenueFilter?: string | null;
+  onSelectVenueFilter?: (venue: string | null) => void;
 }
 
 export const StatisticsBar: React.FC<StatisticsBarProps> = ({
   stats,
+  venueStats,
   history,
   dailyProfitTarget,
   dailyLossLimit,
   onOpenHistory,
   onClearHistory,
+  onImportRealData,
+  selectedVenueFilter,
+  onSelectVenueFilter,
 }) => {
   const isProfit = stats.netProfit > 0;
   const isLoss = stats.netProfit < 0;
 
-  // チャートの開閉ステート（履歴があるときは初期展開）
-  const [showChart, setShowChart] = useState<boolean>(history.length > 0);
+  // チャート・会場別収支の開閉ステート
+  const [showChart, setShowChart] = useState<boolean>(false);
+  const [showVenueStats, setShowVenueStats] = useState<boolean>(true);
   const [showConfirmClear, setShowConfirmClear] = useState<boolean>(false);
 
   return (
@@ -108,8 +130,27 @@ export const StatisticsBar: React.FC<StatisticsBarProps> = ({
           </div>
         </div>
 
-        {/* チャート表示切替 & 目標管理情報 & 履歴モーダルボタン */}
-        <div className="flex items-center gap-2">
+        {/* コントロールボタングループ */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* 会場別収支トグルボタン */}
+          <button
+            onClick={() => setShowVenueStats(!showVenueStats)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded font-bold text-xs border transition-colors cursor-pointer ${
+              showVenueStats
+                ? 'bg-cyan-950/60 text-cyan-300 border-cyan-700'
+                : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+            }`}
+            title="各会場ごとの的中率・回収率・損益パネルを開閉"
+          >
+            <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>会場別収支 ({venueStats.length}場)</span>
+            {showVenueStats ? (
+              <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            )}
+          </button>
+
           {/* チャートトグルボタン */}
           <button
             onClick={() => setShowChart(!showChart)}
@@ -121,13 +162,25 @@ export const StatisticsBar: React.FC<StatisticsBarProps> = ({
             title="直近10走の回収率・純利益推移チャートを開閉"
           >
             <BarChart2 className="w-3.5 h-3.5 text-blue-400" />
-            <span>10走推移グラフ</span>
+            <span>10走グラフ</span>
             {showChart ? (
               <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
             ) : (
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             )}
           </button>
+
+          {/* 実データ一括インポートボタン */}
+          {onImportRealData && (
+            <button
+              onClick={onImportRealData}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-bold text-xs transition-colors shadow-xs cursor-pointer"
+              title="公式確定実データ（全24場・過去実績）を一括インポート"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">実データ</span>読込
+            </button>
+          )}
 
           <div className="hidden xl:flex flex-col text-[10px] text-slate-400 text-right">
             <div>
@@ -143,7 +196,7 @@ export const StatisticsBar: React.FC<StatisticsBarProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-bold text-xs transition-colors shadow-sm cursor-pointer"
           >
             <History className="w-3.5 h-3.5 text-blue-400" />
-            <span>収支履歴一覧</span>
+            <span>履歴一覧</span>
             <span className="px-1.5 py-0.2 bg-slate-900 rounded-full text-[10px] text-slate-300 font-mono">
               {stats.totalRaces}
             </span>
@@ -155,15 +208,15 @@ export const StatisticsBar: React.FC<StatisticsBarProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowConfirmClear(true)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-900 hover:bg-rose-950/80 text-rose-300 border border-slate-800 hover:border-rose-700 rounded font-medium text-xs transition-colors cursor-pointer"
+                  className="flex items-center gap-1 px-2 py-1.5 bg-slate-900 hover:bg-rose-950/80 text-rose-300 border border-slate-800 hover:border-rose-700 rounded font-medium text-xs transition-colors cursor-pointer"
                   title="すべての履歴・収支集計を全消去"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                  <span>全削除</span>
+                  <span>全消去</span>
                 </button>
               ) : (
                 <div className="flex items-center gap-1 bg-rose-950 border border-rose-600 rounded px-2 py-1 text-xs animate-in fade-in">
-                  <span className="text-rose-200 font-bold text-[10px]">全件削除？</span>
+                  <span className="text-rose-200 font-bold text-[10px]">削除？</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -188,7 +241,19 @@ export const StatisticsBar: React.FC<StatisticsBarProps> = ({
         </div>
       </div>
 
-      {/* 2. 直近10レース推移チャート（Recharts） */}
+      {/* 2. 各会場ごとの的中率・回収率・損益パネル */}
+      {showVenueStats && (
+        <div className="pt-2 border-t border-slate-900 animate-in fade-in duration-200">
+          <VenueStatisticsPanel
+            venueStats={venueStats}
+            selectedVenueFilter={selectedVenueFilter}
+            onSelectVenueFilter={onSelectVenueFilter}
+            onImportRealData={onImportRealData}
+          />
+        </div>
+      )}
+
+      {/* 3. 直近10レース推移チャート（Recharts） */}
       {showChart && (
         <div className="pt-1 border-t border-slate-900 animate-in fade-in duration-200">
           <RaceTrendChart history={history} />

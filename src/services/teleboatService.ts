@@ -74,13 +74,23 @@ export function buildTeleboatTickets(
   const venueObj = VENUES.find((v) => v.name === race.venue);
   const venueCode = venueObj ? venueObj.code : '00';
 
+  const typeCodeMap: Record<string, '3T' | '3F' | '2T' | '2F' | '1T' | '1F' | 'WD'> = {
+    '3t': '3T',
+    '3f': '3F',
+    '2t': '2T',
+    '2f': '2F',
+    '1t': '1T',
+    '1f': '1F',
+    'wide': 'WD',
+  };
+
   return candidates
     .filter((c) => c.stake > 0)
     .map((c) => ({
       venueCode,
       venueName: race.venue,
       raceNo: race.raceNo,
-      betType: '3T',
+      betType: (typeCodeMap[c.betType || '3t'] || '3T') as any,
       first: c.first,
       second: c.second,
       third: c.third,

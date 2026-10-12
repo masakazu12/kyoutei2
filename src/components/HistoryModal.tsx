@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { RaceHistoryRecord } from '../types/kyotei';
-import { Download, Trash2, CheckCircle, XCircle, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { Download, Trash2, CheckCircle, XCircle, AlertTriangle, FileSpreadsheet, Building2, CheckCircle2 } from 'lucide-react';
 import { StatusStamp } from './StatusStamp';
+import { BET_TYPE_LABELS, BetType } from '../types/kyotei';
 
 interface HistoryModalProps {
   history: RaceHistoryRecord[];
   onExportCsv: () => void;
   onClearHistory: () => void;
   onDeleteRecord: (id: string) => void;
+  onImportRealData?: () => void;
   onClose: () => void;
 }
 
@@ -16,13 +18,19 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   onExportCsv,
   onClearHistory,
   onDeleteRecord,
+  onImportRealData,
   onClose,
 }) => {
   const [filter, setFilter] = useState<'all' | 'hit' | 'miss' | 'skip'>('all');
+  const [venueFilter, setVenueFilter] = useState<string>('all');
   const [showClearConfirmDialog, setShowClearConfirmDialog] = useState<boolean>(false);
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
 
+  // 全履歴に存在する会場一覧
+  const availableVenues = Array.from(new Set(history.map((h) => h.venue))).filter(Boolean);
+
   const filtered = history.filter((item) => {
+    if (venueFilter !== 'all' && item.venue !== venueFilter) return false;
     if (filter === 'hit') return item.isHit;
     if (filter === 'miss') return item.totalStake > 0 && !item.isHit;
     if (filter === 'skip') return item.status === 'Skip';
@@ -133,29 +141,69 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
           </div>
         </div>
 
-        {/* フィルタータブ */}
-        <div className="px-3 py-2 bg-slate-950 flex items-center gap-2 border-b border-slate-800 text-xs">
-          <span className="text-slate-500">絞り込み:</span>
-          {(
-            [
-              { id: 'all', label: 'すべて' },
-              { id: 'hit', label: '的中のみ' },
-              { id: 'miss', label: '不的中のみ' },
-              { id: 'skip', label: '見送り' },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setFilter(t.id)}
-              className={`px-2.5 py-1 rounded font-medium transition-colors ${
-                filter === t.id
-                  ? 'bg-blue-600 text-white font-bold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* フィルタータブ & 会場絞り込み */}
+        <div className="px-3 py-2 bg-slate-950 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-500">状態:</span>
+            {(
+              [
+                { id: 'all', label: 'すべて' },
+                { id: 'hit', label: '的中のみ' },
+                { id: 'miss', label: '不的中のみ' },
+                { id: 'skip', label: '見送り' },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setFilter(t.id)}
+                className={`px-2.5 py-1 rounded font-medium transition-colors cursor-pointer ${
+                  filter === t.id
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* 会場絞り込みセレクター */}
+            <div className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800">
+              <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-slate-400 text-[11px]">会場:</span>
+              <select
+                value={venueFilter}
+                onChange={(e) => setVenueFilter(e.target.value)}
+                className="bg-transparent text-slate-200 font-bold text-xs focus:outline-none cursor-pointer"
+              >
+                <option value="all" className="bg-slate-900 text-white">全会場 ({history.length}件)</option>
+                {availableVenues.map((v) => {
+                  const count = history.filter((h) => h.venue === v).length;
+                  return (
+                    <option key={v} value={v} className="bg-slate-900 text-white">
+                      {v} ({count}件)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {onImportRealData && (
+              <button
+                onClick={() => {
+                  onImportRealData();
+                  setNotificationMsg('公式確定実データパックをインポートしました');
+                  setTimeout(() => setNotificationMsg(null), 3000);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[11px] rounded transition-colors shadow-xs cursor-pointer"
+                title="全国24場の公式過去レース確定実データを一括インポート"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>実データ読込</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* テーブル表示領域 */}
@@ -220,6 +268,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                         </span>
                       ) : (
                         <div className="space-y-0.5">
+                          <div className="text-[10px] text-cyan-400 font-bold">
+                            [{BET_TYPE_LABELS[item.betType || '3t']?.label || '3連単'} {item.bets.length}点]
+                          </div>
+                          <div className="flex flex-wrap gap-1">
                           {item.bets.map((b) => (
                             <span
                               key={b.combination}
@@ -231,6 +283,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                               {b.isHit && '★'}
                             </span>
                           ))}
+                          </div>
                         </div>
                       )}
                     </td>

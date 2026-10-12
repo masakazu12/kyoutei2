@@ -39,6 +39,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dailyLossLimit: 5000, // 日次損失上限 5,000円
   allocationMode: 'equal', // 均等配分
   autoScaleBudget: true, // 上限超過時に自動縮小
+  defaultBetType: '3t', // デフォルト3連単
+  defaultPointCount: 5, // デフォルト5点買い
 
   // 評価スコア重み (仕様書 7.3: Score = 勝率×20 + 2連対率×8 + モーター2連対率×5 + 展示補正 + コース補正)
   winRateWeight: 20,

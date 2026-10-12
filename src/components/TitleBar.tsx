@@ -10,6 +10,7 @@ import {
   Globe,
   Monitor,
   Sparkles,
+  Bot,
 } from 'lucide-react';
 import { PRESET_RACES } from '../data/presetRaces';
 
@@ -27,6 +28,8 @@ interface TitleBarProps {
   onOpenAutoVote?: () => void;
   isAutoVoteEnabled?: boolean;
   onOpenAIPrediction?: () => void;
+  onOpenAutoPilot?: () => void;
+  isAutoPilotRunning?: boolean;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -43,6 +46,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenAutoVote,
   isAutoVoteEnabled = false,
   onOpenAIPrediction,
+  onOpenAutoPilot,
+  isAutoPilotRunning = false,
 }) => {
   const [currentTime, setCurrentTime] = useState('');
 
@@ -124,6 +129,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-current" />
               <span>AI予想</span>
+            </button>
+          )}
+
+          {onOpenAutoPilot && (
+            <button
+              onClick={onOpenAutoPilot}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded font-bold text-[11px] transition-all shadow-xs cursor-pointer border ${
+                isAutoPilotRunning
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 animate-pulse'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-400 hover:scale-[1.02]'
+              }`}
+              title="全自動運転（番組巡回・予想・資金配分・自動投票・結果取得サイクル）の開始・設定"
+            >
+              <Bot className="w-3.5 h-3.5 text-white" />
+              <span>{isAutoPilotRunning ? '自動運転[稼働中]' : '自動運転'}</span>
             </button>
           )}
 

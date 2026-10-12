@@ -4,6 +4,8 @@ import { BOAT_COLORS } from '../constants/venues';
 import { Award, CheckCircle, XCircle, ArrowRight, Zap, RefreshCw } from 'lucide-react';
 import { fetchRaceResult } from '../services/raceDataProvider';
 
+import { isBetHit } from '../services/betEvaluationHelper';
+
 interface ResultModalProps {
   race: RaceInfo;
   candidates: BetCandidate[];
@@ -35,12 +37,14 @@ export const ResultModal: React.FC<ResultModalProps> = ({
   const finishOrder = `${first}-${second}-${third}`;
   const totalStake = candidates.reduce((sum, c) => sum + (c.stake || 0), 0);
 
-  // 的中判定
-  const matchedCandidate = candidates.find((c) => c.combination === finishOrder && c.stake > 0);
+  // 的中判定 (券種対応)
+  const matchedCandidate = candidates.find(
+    (c) => isBetHit(c.combination, c.betType || '3t', finishOrder) && c.stake > 0
+  );
   const isHit = !!matchedCandidate;
   const officialPayout = parseInt(payoutInput, 10) || 0;
 
-  // 払戻金計算: 購入金額 × (確定オッズ / 100)
+  // 払戻金計算: 購入金額 × (確定払戻 / 100)
   const totalReturn = isHit && matchedCandidate
     ? Math.floor((matchedCandidate.stake * officialPayout) / 100)
     : 0;

@@ -20,6 +20,8 @@ export function exportHistoryToCsv(history: RaceHistoryRecord[], baseDateStr?: s
     'レース番号',
     'レース名',
     '判定状態',
+    '舟券種別',
+    '購入点数',
     '総投資額(円)',
     '確定着順',
     '確定払戻金(円)',
@@ -39,10 +41,22 @@ export function exportHistoryToCsv(history: RaceHistoryRecord[], baseDateStr?: s
   const rows: string[] = [];
   rows.push(headers.join(','));
 
+  const betTypeNames: Record<string, string> = {
+    '3t': '3連単',
+    '3f': '3連複',
+    '2t': '2連単',
+    '2f': '2連複',
+    '1t': '単勝',
+    '1f': '複勝',
+    'wide': '拡連複',
+  };
+
   history.forEach(item => {
     const betsDetail = item.bets
       .map(b => `${b.combination}(${b.odds}倍:${b.stake}円${b.isHit ? ':的中' : ''})`)
       .join(' / ');
+
+    const betTypeName = item.betType ? (betTypeNames[item.betType] || item.betType) : '3連単';
 
     const row = [
       escapeCsv(item.timestamp),
@@ -51,6 +65,8 @@ export function exportHistoryToCsv(history: RaceHistoryRecord[], baseDateStr?: s
       escapeCsv(`${item.raceNo}R`),
       escapeCsv(item.raceTitle),
       escapeCsv(item.status),
+      escapeCsv(betTypeName),
+      escapeCsv(item.pointCount || item.bets.length || 0),
       escapeCsv(item.totalStake),
       escapeCsv(item.finishOrder || '-'),
       escapeCsv(item.officialPayout || 0),

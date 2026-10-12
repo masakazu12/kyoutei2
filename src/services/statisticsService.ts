@@ -1,4 +1,5 @@
-import { DayStatistics, RaceHistoryRecord } from '../types/kyotei';
+import { DayStatistics, RaceHistoryRecord, VenueStatistics } from '../types/kyotei';
+import { VENUES } from '../constants/venues';
 
 /**
  * 10. 統計管理サービス
@@ -60,3 +61,73 @@ export function calculateStatistics(history: RaceHistoryRecord[]): DayStatistics
     skipRate,
   };
 }
+
+/**
+ * 会場別 収支・的中率・回収率 集計ロジック
+ */
+export function calculateVenueStatistics(history: RaceHistoryRecord[]): VenueStatistics[] {
+  if (!history || history.length === 0) return [];
+
+  const venueMap = new Map<string, {
+    totalRaces: number;
+    betRaces: number;
+    hitCount: number;
+    totalStake: number;
+    totalReturn: number;
+    maxPayout: number;
+  }>();
+
+  history.forEach((record) => {
+    const venue = record.venue || '未設定';
+    const current = venueMap.get(venue) || {
+      totalRaces: 0,
+      betRaces: 0,
+      hitCount: 0,
+      totalStake: 0,
+      totalReturn: 0,
+      maxPayout: 0,
+    };
+
+    current.totalRaces += 1;
+    if (record.totalStake > 0) {
+      current.betRaces += 1;
+      current.totalStake += record.totalStake;
+      current.totalReturn += record.totalReturn;
+      if (record.isHit) {
+        current.hitCount += 1;
+      }
+      if (record.totalReturn > current.maxPayout) {
+        current.maxPayout = record.totalReturn;
+      }
+    }
+
+    venueMap.set(venue, current);
+  });
+
+  const venueRegionMap = new Map<string, string>();
+  VENUES.forEach((v) => venueRegionMap.set(v.name, v.region));
+
+  const list: VenueStatistics[] = Array.from(venueMap.entries()).map(([venueName, data]) => {
+    const hitRate = data.betRaces > 0 ? Number(((data.hitCount / data.betRaces) * 100).toFixed(1)) : 0;
+    const recoveryRate = data.totalStake > 0 ? Number(((data.totalReturn / data.totalStake) * 100).toFixed(1)) : 0;
+    const netProfit = data.totalReturn - data.totalStake;
+
+    return {
+      venueName,
+      region: venueRegionMap.get(venueName) || 'その他',
+      totalRaces: data.totalRaces,
+      betRaces: data.betRaces,
+      hitCount: data.hitCount,
+      hitRate,
+      totalStake: data.totalStake,
+      totalReturn: data.totalReturn,
+      netProfit,
+      recoveryRate,
+      maxPayout: data.maxPayout,
+    };
+  });
+
+  // レース数・損益順にデフォルトソート
+  return list.sort((a, b) => b.totalRaces - a.totalRaces || b.netProfit - a.netProfit);
+}
+

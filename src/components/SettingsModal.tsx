@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppSettings, AllocationMode } from '../types/kyotei';
+import { AppSettings, AllocationMode, BetType, BET_TYPE_LABELS } from '../types/kyotei';
 import { DEFAULT_SETTINGS } from '../constants/venues';
 import { Sliders, RotateCcw, Save, Download, Upload } from 'lucide-react';
 
@@ -105,6 +105,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono">
           {activeTab === 'basic' ? (
             <div className="space-y-4 font-sans">
+              {/* 購入舟券種別・点数デフォルト設定 */}
+              <div>
+                <h4 className="text-slate-200 font-bold mb-2 pb-1 border-b border-slate-800 flex justify-between">
+                  <span>購入舟券種別・点数 デフォルト設定</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-400 text-[11px] block mb-1">既定の購入舟券種別</label>
+                    <select
+                      value={form.defaultBetType || '3t'}
+                      onChange={(e) => setForm((prev) => ({ ...prev, defaultBetType: e.target.value as BetType }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200 font-sans cursor-pointer focus:outline-none focus:border-blue-500"
+                    >
+                      {(['3t', '3f', '2t', '2f', '1t', '1f', 'wide'] as BetType[]).map((t) => (
+                        <option key={t} value={t} className="bg-slate-900 text-white">
+                          {BET_TYPE_LABELS[t].label} ({BET_TYPE_LABELS[t].desc})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-[11px] block mb-1">既定の購入点数 (1〜12点)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={form.defaultPointCount || 5}
+                      onChange={(e) => updateNumber('defaultPointCount', parseInt(e.target.value) || 5)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200 font-mono text-right focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* 資金配分・予算 */}
               <div>
                 <h4 className="text-slate-200 font-bold mb-2 pb-1 border-b border-slate-800 flex justify-between">
